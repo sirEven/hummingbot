@@ -6,6 +6,7 @@ from hummingbot.strategy.strategy_base cimport StrategyBase
 
 cdef class TechnicalAnalysisStrategy(StrategyBase):
     cdef:
+        object _ta_pattern
         object _market_info
         int _leverage
         object _position_mode
@@ -67,7 +68,8 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
     cdef c_stop_loss_feature(self, object mode, list active_positions)
     cdef c_apply_initial_settings(self, str trading_pair, object position, int64_t leverage)
     cdef object c_get_mid_price(self)
-    cdef object c_create_base_proposal(self)
+    cdef object c_create_base_proposal_buy(self)
+    cdef object c_create_base_proposal_sell(self)
     cdef tuple c_get_adjusted_available_balance(self, list orders)
     cdef c_apply_order_levels_modifiers(self, object proposal)
     cdef c_apply_price_band(self, object proposal)
@@ -82,5 +84,6 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
     cdef c_cancel_hanging_orders(self)
     cdef c_cancel_orders_below_min_spread(self)
     cdef bint c_to_create_orders(self, object proposal)
+    cdef c_execute_order_proposal(self, object proposal, object position_action)
     cdef c_execute_orders_proposal(self, object proposal, object position_action)
     cdef set_timers(self)

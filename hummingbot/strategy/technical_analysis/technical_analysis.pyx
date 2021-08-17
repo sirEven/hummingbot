@@ -41,6 +41,7 @@ from .asset_price_delegate cimport AssetPriceDelegate
 from .asset_price_delegate import AssetPriceDelegate
 from .order_book_asset_price_delegate cimport OrderBookAssetPriceDelegate
 
+from .ta import TA
 
 NaN = float("nan")
 s_decimal_zero = Decimal(0)
@@ -65,6 +66,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
         return pmm_logger
 
     def __init__(self,
+                 ta_pattern: TA,
                  market_info: MarketTradingPairTuple,
                  leverage: int,
                  position_mode: str,
@@ -107,6 +109,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
             raise ValueError("Parameter price_ceiling cannot be lower than price_floor.")
 
         super().__init__()
+        self._ta_pattern = ta_pattern
         self._sb_order_tracker = PerpetualMarketMakingOrderTracker()
         self._market_info = market_info
         self._leverage = leverage
@@ -573,6 +576,10 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                     self.logger().warning(f"WARNING: Some markets are not connected or are down at the moment. Market "
                                           f"making may be dangerous when markets or networks are unstable.")
 
+            
+            self.logger().info("Tick Count: {}.".format(self._ta_pattern.tick_count))
+            
+            # S: If no positions exists, make new one WIP: HERE WE NEED TO SAY "IF BUY/SELL SIGNAL, CREATE BUY/SELL PROPORSAL"
             if len(session_positions) == 0:
                 self._exit_orders = []  # Empty list of exit order at this point to reduce size
                 proposal = None
@@ -580,56 +587,98 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                 # asset_mid_price = self.c_set_mid_price(market_info)
                 if self._create_timestamp <= self._current_timestamp:
                     # 1. Create base order proposals
-                    proposal =self.c_create_base_proposal()
-                    # 2. Apply functions that limit numbers of buys and sells proposal
-                    self.c_apply_order_levels_modifiers(proposal)
-                    # 3. Apply functions that modify orders price
-                    self.c_apply_order_price_modifiers(proposal)
+                    if self._ta_pattern.signal == "buy":
+                        proposal = self.c_create_base_proposal_buy()
+                    elif self._ta_pattern.signal == "sell":
+                        proposal = self.c_create_base_proposal_sell()
+                    # 2. Apply functions that limit numbers of buys and sells proposal 
+                    # S: No need for this
+                    # self.c_apply_order_levels_modifiers(proposal)
+                    # 3. Apply functions that modify orders price 
+                    # S: No need for this
+                    # self.c_apply_order_price_modifiers(proposal)
                     # 4. Apply budget constraint, i.e. can't buy/sell more than what you have.
                     self.c_apply_budget_constraint(proposal)
-
-                    if not self._take_if_crossed:
-                        self.c_filter_out_takers(proposal)
-                self.c_cancel_active_orders(proposal)
-                self.c_cancel_hanging_orders()
-                self.c_cancel_orders_below_min_spread()
+                    # S: No need for this
+                    # if not self._take_if_crossed:
+                    #     self.c_filter_out_takers(proposal)
+                # # S: No need for this
+                # self.c_cancel_active_orders(proposal)
+                # self.c_cancel_hanging_orders()
+                # self.c_cancel_orders_below_min_spread()
+                # S: Here we want .MARKET
                 if self.c_to_create_orders(proposal):
-                    self._close_order_type = OrderType.LIMIT
-                    self.c_execute_orders_proposal(proposal, PositionAction.OPEN)
+                    self._close_order_type = OrderType.MARKET
+                    # S: Now we use our own execute_order_proposal func
+                    # self.c_execute_orders_proposal(proposal, PositionAction.OPEN)
+                    self.c_execute_order_proposal(proposal, PositionAction.OPEN)
+                
                 # Reset peak ask and bid prices
-                self._ts_peak_ask_price = market.get_price(self.trading_pair, False)
-                self._ts_peak_bid_price = market.get_price(self.trading_pair, True)
+                # S: No need for this
+                # self._ts_peak_ask_price = market.get_price(self.trading_pair, False)
+                # self._ts_peak_bid_price = market.get_price(self.trading_pair, True)
+            # S: Else, manage those positions
             else:
-                self.c_manage_positions(session_positions)
+                if self._ta_pattern.tick_count == 15:
+                    self.c_manage_positions(session_positions)
+                    self._ta_pattern.reset_tick_count()
+
         finally:
             self._last_timestamp = timestamp
+            # S: Temporary tick counting for finding the right infrastructure logic
+            self._ta_pattern.increment_tick_count()
+            
 
     cdef c_manage_positions(self, list session_positions):
         cdef:
             object mode = self._position_mode
+            ExchangeBase market = self._market_info.market
+            list buys = []
+            list sells = []
 
-        if self._position_management == "Profit_taking":
-            self._close_order_type = OrderType.LIMIT
-            proposals = self.c_profit_taking_feature(mode, session_positions)
-        else:
-            self._close_order_type = self._close_position_order_type
-            proposals = self.c_trailing_stop_feature(mode, session_positions)
+        # S: We don't want the positions to be managed in predefined anyway - we simply buy or sell according to signals.
+        # S: All the position management and proposal execution will be wrapped in Signal logic that updates every tick. 
+
+        # if self._position_management == "Profit_taking":
+        #     self._close_order_type = OrderType.LIMIT
+        #     proposals = self.c_profit_taking_feature(mode, session_positions)
+        # else:
+        #     self._close_order_type = self._close_position_order_type
+        #     proposals = self.c_trailing_stop_feature(mode, session_positions)
+
+        for position in session_positions:
+            if position.amount > 0: # S: It is a long position -> we need to close it with a sell-order TODO: ask_price (if necessary)
+                
+                size = market.c_quantize_order_amount(self.trading_pair, abs(position.amount))
+                price = market.c_quantize_order_price(self.trading_pair, self.get_price() * Decimal("1")) 
+
+                sells.append(PriceSize(price, size))
+
+            else: # S: It is a short position -> we need to close it with a buy-order TODO: bid_price (if necessary)
+                size = market.c_quantize_order_amount(self.trading_pair, abs(position.amount))
+                price = market.c_quantize_order_price(self.trading_pair, self.get_price() * Decimal("1"))
+
+                buys.append(PriceSize(price, size))
+
+        proposals = Proposal(buys, sells)
+
         if proposals is not None:
-            self.c_execute_orders_proposal(proposals, PositionAction.CLOSE)
+            self.c_execute_order_proposal(proposals, PositionAction.CLOSE)
 
         # check if stop loss needs to be placed
-        proposals = self.c_stop_loss_feature(mode, session_positions)
-        if proposals is not None:
-            self._close_order_type = self._close_position_order_type
-            self.c_execute_orders_proposal(proposals, PositionAction.CLOSE)
+        # S: We also don't need to check for stop loss necessity
+        # proposals = self.c_stop_loss_feature(mode, session_positions)
+        # if proposals is not None:
+        #     self._close_order_type = self._close_position_order_type
+        #     self.c_execute_orders_proposal(proposals, PositionAction.CLOSE)
 
     cdef c_profit_taking_feature(self, object mode, list active_positions):
         cdef:
             ExchangeBase market = self._market_info.market
             list active_orders = self.active_orders
             list unwanted_exit_orders = [o for o in active_orders if o.client_order_id not in self._exit_orders]
-            ask_price = market.get_price(self.trading_pair, False)
-            bid_price = market.get_price(self.trading_pair, True)
+            ask_price = market.get_price(self.trading_pair, False) # S: Bool is "not is_buy"
+            bid_price = market.get_price(self.trading_pair, True)  # S: Bool is  "is_buy"
             list buys = []
             list sells = []
 
@@ -663,9 +712,9 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                 if len(exit_order_exists) == 0:
                     size = market.c_quantize_order_amount(self.trading_pair, abs(position.amount))
                     if size > 0 and price > 0:
-                        if position.amount < 0:
+                        if position.amount < 0: # S: if position.amount < 0 it is a short position -> we close it wiht a buy-order
                             buys.append(PriceSize(price, size))
-                        else:
+                        else:                   # S: if position.amount > 0 it is a long position -> we close it wiht a sell-order
                             sells.append(PriceSize(price, size))
         return Proposal(buys, sells)
 
@@ -788,47 +837,31 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                         buys.append(PriceSize(price, size))
         return Proposal(buys, sells)
 
-    cdef object c_create_base_proposal(self):
+    cdef object c_create_base_proposal_buy(self):
         cdef:
             ExchangeBase market = self._market_info.market
             list buys = []
             list sells = []
 
-        # First to check if a customized order override is configured, otherwise the proposal will be created according
-        # to order spread, amount, and levels setting.
-        order_override = self._order_override
-        if order_override is not None and len(order_override) > 0:
-            for key, value in order_override.items():
-                if str(value[0]) in ["buy", "sell"]:
-                    if str(value[0]) == "buy":
-                        price = self.get_price() * (Decimal("1") - Decimal(str(value[1])) / Decimal("100"))
-                        price = market.c_quantize_order_price(self.trading_pair, price)
-                        size = Decimal(str(value[2]))
-                        size = market.c_quantize_order_amount(self.trading_pair, size)
-                        if size > 0 and price > 0:
-                            buys.append(PriceSize(price, size))
-                    elif str(value[0]) == "sell":
-                        price = self.get_price() * (Decimal("1") + Decimal(str(value[1])) / Decimal("100"))
-                        price = market.c_quantize_order_price(self.trading_pair, price)
-                        size = Decimal(str(value[2]))
-                        size = market.c_quantize_order_amount(self.trading_pair, size)
-                        if size > 0 and price > 0:
-                            sells.append(PriceSize(price, size))
-        else:
-            for level in range(0, self._buy_levels):
-                price = self.get_price() * (Decimal("1") - self._bid_spread - (level * self._order_level_spread))
-                price = market.c_quantize_order_price(self.trading_pair, price)
-                size = self._order_amount + (self._order_level_amount * level)
-                size = market.c_quantize_order_amount(self.trading_pair, size)
-                if size > 0:
-                    buys.append(PriceSize(price, size))
-            for level in range(0, self._sell_levels):
-                price = self.get_price() * (Decimal("1") + self._ask_spread + (level * self._order_level_spread))
-                price = market.c_quantize_order_price(self.trading_pair, price)
-                size = self._order_amount + (self._order_level_amount * level)
-                size = market.c_quantize_order_amount(self.trading_pair, size)
-                if size > 0:
-                    sells.append(PriceSize(price, size))
+        price = market.get_price(self.trading_pair, True) # S: Correct way to set bid price (works and results in filled order aka a open position)
+        size = self._order_amount
+        size = market.c_quantize_order_amount(self.trading_pair, size)
+        if size > 0:
+            buys.append(PriceSize(price, size))
+
+        return Proposal(buys, sells)
+
+    cdef object c_create_base_proposal_sell(self):
+        cdef:
+            ExchangeBase market = self._market_info.market
+            list buys = []
+            list sells = []
+
+        price = market.get_price(self.trading_pair, False) # S: Correct way to set ask price (works and results in filled order aka a open position)
+        size = self._order_amount 
+        size = market.c_quantize_order_amount(self.trading_pair, size)
+        if size > 0:
+            sells.append(PriceSize(price, size))
 
         return Proposal(buys, sells)
 
@@ -1175,10 +1208,80 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                                    f"ID - {order.client_order_id}")
                 self.c_cancel_order(self._market_info, order.client_order_id)
 
+    # S: We don't need this in the future
     cdef bint c_to_create_orders(self, object proposal):
         return self._create_timestamp < self._current_timestamp and \
             proposal is not None and \
             len(self.active_non_hanging_orders) == 0
+
+    cdef c_execute_order_proposal(self, object proposal, object position_action):
+        cdef:
+            double expiration_seconds = NaN
+            str bid_order_id, ask_order_id
+            bint orders_created = False
+            object order_type = self._close_order_type
+
+        if len(proposal.buys) > 0: 
+            if position_action == PositionAction.CLOSE:
+                # S: Find out how to close position
+                # S: Actually we need to close an open position by creating an opposite order
+                # S: https://docs.hummingbot.io/strategies/perpetual-market-making/#creating-orders-to-close-a-position
+                
+                self.logger().info("Here we would close the SHORT position")
+
+            else: 
+                if self._logging_options & self.OPTION_LOG_CREATE_ORDER:
+                    price_quote_str = [f"{buy.size.normalize()} {self.base_asset}, "
+                                    f"{buy.price.normalize()} {self.quote_asset}"
+                                    for buy in proposal.buys]
+                    self.logger().info(
+                        f"({self.trading_pair}) Creating {len(proposal.buys)} {self._close_order_type.name} bid orders "
+                        f"at (Size, Price): {price_quote_str} to {position_action.name} position."
+                    )
+                for buy in proposal.buys: 
+                    bid_order_id = self.c_buy_with_specific_market(
+                        self._market_info,
+                        buy.size,
+                        order_type=order_type,
+                        price=buy.price,
+                        expiration_seconds=expiration_seconds,
+                        position_action=position_action
+                    )
+                    if position_action == PositionAction.CLOSE:
+                        self._exit_orders.append(bid_order_id)
+                    orders_created = True
+
+        if len(proposal.sells) > 0:
+            if position_action == PositionAction.CLOSE:
+                # S: Find out how to close position
+                # S: Actually we need to close an open position by creating an opposite order
+                # S: https://docs.hummingbot.io/strategies/perpetual-market-making/#creating-orders-to-close-a-position
+
+                self.logger().info("Here we would close the LONG position")
+
+            else:
+                if self._logging_options & self.OPTION_LOG_CREATE_ORDER:
+                    price_quote_str = [f"{sell.size.normalize()} {self.base_asset}, "
+                                    f"{sell.price.normalize()} {self.quote_asset}"
+                                    for sell in proposal.sells]
+                    self.logger().info(
+                        f"({self.trading_pair}) Creating {len(proposal.sells)}  {self._close_order_type.name} ask "
+                        f"orders at (Size, Price): {price_quote_str} to {position_action.name} position."
+                    )
+                for sell in proposal.sells:
+                    ask_order_id = self.c_sell_with_specific_market(
+                        self._market_info,
+                        sell.size,
+                        order_type=order_type,
+                        price=sell.price,
+                        expiration_seconds=expiration_seconds,
+                        position_action=position_action
+                    )
+                    if position_action == PositionAction.CLOSE:
+                        self._exit_orders.append(ask_order_id)
+                    orders_created = True        
+
+
 
     cdef c_execute_orders_proposal(self, object proposal, object position_action):
         cdef:
@@ -1254,11 +1357,11 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
             super().notify_hb_app(msg)
 
     def get_price_type(self, price_type_str: str) -> PriceType:
-        if price_type_str == "mid_price":
+        if price_type_str == "mid_price": # S: average between bid and ask
             return PriceType.MidPrice
-        elif price_type_str == "best_bid":
+        elif price_type_str == "best_bid": # S: best price I (as buyer) want to pay
             return PriceType.BestBid
-        elif price_type_str == "best_ask":
+        elif price_type_str == "best_ask": # S: best price I (as seller) want to offer
             return PriceType.BestAsk
         elif price_type_str == "last_price":
             return PriceType.LastTrade

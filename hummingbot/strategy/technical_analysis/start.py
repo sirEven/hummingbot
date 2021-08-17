@@ -14,6 +14,8 @@ from hummingbot.connector.exchange.paper_trade import create_paper_trade_market
 from hummingbot.connector.exchange_base import ExchangeBase
 from decimal import Decimal
 
+from .ta import TA
+
 
 def start(self):
     try:
@@ -75,6 +77,7 @@ def start(self):
         strategy_logging_options = TechnicalAnalysisStrategy.OPTION_LOG_ALL
 
         self.strategy = TechnicalAnalysisStrategy(
+            ta_pattern = TA("hullMA", "buy"),
             market_info=MarketTradingPairTuple(*maker_data),
             leverage=leverage,
             position_mode=position_mode,
