@@ -632,7 +632,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                 size = market.c_quantize_order_amount(self.trading_pair, abs(position.amount))
                 price = market.get_price(self.trading_pair, False)
 
-                sells.append(PriceSize(price, size))
+                sells.append(PriceSize(price, size)) # S: CHECK AGAIN if we add to the correct side here!! //I think we do.
 
             else: # S: It is a short position -> we need to close it with a buy-order TODO: bid_price (if necessary)
                 size = market.c_quantize_order_amount(self.trading_pair, abs(position.amount))
@@ -1037,6 +1037,29 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                 
                 self.logger().info("Here we would close the SHORT position")
 
+                if self._logging_options & self.OPTION_LOG_CREATE_ORDER:
+                    price_quote_str = [f"{buy.size.normalize()} {self.base_asset}, "
+                                    f"{buy.price.normalize()} {self.quote_asset}"
+                                    for buy in proposal.buys]
+                    self.logger().info(
+                        f"({self.trading_pair}) Creating {len(proposal.buys)} {self._close_order_type.name} bid orders "
+                        f"at (Size, Price): {price_quote_str} to {position_action.name} position."
+                    )
+                
+                for buy in proposal.buys: 
+                    bid_order_id = self.c_buy_with_specific_market(
+                        self._market_info,
+                        buy.size,
+                        order_type=order_type,
+                        price=buy.price,
+                        expiration_seconds=expiration_seconds,
+                        position_action=position_action
+                    )
+                    # if position_action == PositionAction.CLOSE:
+                    #     self._exit_orders.append(bid_order_id)
+
+                    orders_created = True
+
             else: 
                 if self._logging_options & self.OPTION_LOG_CREATE_ORDER:
                     price_quote_str = [f"{buy.size.normalize()} {self.base_asset}, "
@@ -1046,6 +1069,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                         f"({self.trading_pair}) Creating {len(proposal.buys)} {self._close_order_type.name} bid orders "
                         f"at (Size, Price): {price_quote_str} to {position_action.name} position."
                     )
+                
                 for buy in proposal.buys: 
                     bid_order_id = self.c_buy_with_specific_market(
                         self._market_info,
@@ -1068,6 +1092,27 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
 
                 self.logger().info("Here we would close the LONG position")
 
+                if self._logging_options & self.OPTION_LOG_CREATE_ORDER:
+                    price_quote_str = [f"{sell.size.normalize()} {self.base_asset}, "
+                                    f"{sell.price.normalize()} {self.quote_asset}"
+                                    for sell in proposal.sells]
+                    self.logger().info(
+                        f"({self.trading_pair}) Creating {len(proposal.sells)}  {self._close_order_type.name} ask "
+                        f"orders at (Size, Price): {price_quote_str} to {position_action.name} position."
+                    )
+                for sell in proposal.sells:
+                    ask_order_id = self.c_sell_with_specific_market(
+                        self._market_info,
+                        sell.size,
+                        order_type=order_type,
+                        price=sell.price,
+                        expiration_seconds=expiration_seconds,
+                        position_action=position_action
+                    )
+                    # if position_action == PositionAction.CLOSE:
+                    #     self._exit_orders.append(ask_order_id)
+                    orders_created = True 
+                    
             else:
                 if self._logging_options & self.OPTION_LOG_CREATE_ORDER:
                     price_quote_str = [f"{sell.size.normalize()} {self.base_asset}, "
@@ -1086,8 +1131,8 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                         expiration_seconds=expiration_seconds,
                         position_action=position_action
                     )
-                    if position_action == PositionAction.CLOSE:
-                        self._exit_orders.append(ask_order_id)
+                    # if position_action == PositionAction.CLOSE:
+                    #     self._exit_orders.append(ask_order_id)
                     orders_created = True        
 
 
