@@ -77,7 +77,7 @@ def start(self):
         strategy_logging_options = TechnicalAnalysisStrategy.OPTION_LOG_ALL
 
         self.strategy = TechnicalAnalysisStrategy(
-            ta_pattern = TA("hullMA", "buy"),
+            ta_pattern = TA("hullMA"),
             market_info=MarketTradingPairTuple(*maker_data),
             leverage=leverage,
             position_mode=position_mode,

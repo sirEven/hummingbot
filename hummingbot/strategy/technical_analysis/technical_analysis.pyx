@@ -591,37 +591,20 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                         proposal = self.c_create_base_proposal_buy()
                     elif self._ta_pattern.signal == "sell":
                         proposal = self.c_create_base_proposal_sell()
-                    # 2. Apply functions that limit numbers of buys and sells proposal 
-                    # S: No need for this
-                    # self.c_apply_order_levels_modifiers(proposal)
-                    # 3. Apply functions that modify orders price 
-                    # S: No need for this
-                    # self.c_apply_order_price_modifiers(proposal)
-                    # 4. Apply budget constraint, i.e. can't buy/sell more than what you have.
-                    self.c_apply_budget_constraint(proposal)
-                    # S: No need for this
-                    # if not self._take_if_crossed:
-                    #     self.c_filter_out_takers(proposal)
-                # # S: No need for this
-                # self.c_cancel_active_orders(proposal)
-                # self.c_cancel_hanging_orders()
-                # self.c_cancel_orders_below_min_spread()
-                # S: Here we want .MARKET
+
                 if self.c_to_create_orders(proposal):
-                    self._close_order_type = OrderType.MARKET
+                    self.c_apply_budget_constraint(proposal)
+
+                    self._close_order_type = OrderType.MARKET # S: Is this necessary?
                     # S: Now we use our own execute_order_proposal func
-                    # self.c_execute_orders_proposal(proposal, PositionAction.OPEN)
                     self.c_execute_order_proposal(proposal, PositionAction.OPEN)
                 
-                # Reset peak ask and bid prices
-                # S: No need for this
-                # self._ts_peak_ask_price = market.get_price(self.trading_pair, False)
-                # self._ts_peak_bid_price = market.get_price(self.trading_pair, True)
             # S: Else, manage those positions
             else:
                 if self._ta_pattern.tick_count == 15:
                     self.c_manage_positions(session_positions)
                     self._ta_pattern.reset_tick_count()
+                    self._ta_pattern.switch_signal()
 
         finally:
             self._last_timestamp = timestamp
@@ -638,25 +621,22 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
 
         # S: We don't want the positions to be managed in predefined anyway - we simply buy or sell according to signals.
         # S: All the position management and proposal execution will be wrapped in Signal logic that updates every tick. 
-
-        # if self._position_management == "Profit_taking":
-        #     self._close_order_type = OrderType.LIMIT
-        #     proposals = self.c_profit_taking_feature(mode, session_positions)
-        # else:
-        #     self._close_order_type = self._close_position_order_type
-        #     proposals = self.c_trailing_stop_feature(mode, session_positions)
+        # S: I think we need to create proposals in a different way here (with session_positions as input param)
 
         for position in session_positions:
+            
+            self.logger().info(f"position amount is {position.amount}")
+
             if position.amount > 0: # S: It is a long position -> we need to close it with a sell-order TODO: ask_price (if necessary)
                 
                 size = market.c_quantize_order_amount(self.trading_pair, abs(position.amount))
-                price = market.c_quantize_order_price(self.trading_pair, self.get_price() * Decimal("1")) 
+                price = market.get_price(self.trading_pair, False)
 
                 sells.append(PriceSize(price, size))
 
             else: # S: It is a short position -> we need to close it with a buy-order TODO: bid_price (if necessary)
                 size = market.c_quantize_order_amount(self.trading_pair, abs(position.amount))
-                price = market.c_quantize_order_price(self.trading_pair, self.get_price() * Decimal("1"))
+                price = market.get_price(self.trading_pair, True)
 
                 buys.append(PriceSize(price, size))
 
@@ -664,178 +644,6 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
 
         if proposals is not None:
             self.c_execute_order_proposal(proposals, PositionAction.CLOSE)
-
-        # check if stop loss needs to be placed
-        # S: We also don't need to check for stop loss necessity
-        # proposals = self.c_stop_loss_feature(mode, session_positions)
-        # if proposals is not None:
-        #     self._close_order_type = self._close_position_order_type
-        #     self.c_execute_orders_proposal(proposals, PositionAction.CLOSE)
-
-    cdef c_profit_taking_feature(self, object mode, list active_positions):
-        cdef:
-            ExchangeBase market = self._market_info.market
-            list active_orders = self.active_orders
-            list unwanted_exit_orders = [o for o in active_orders if o.client_order_id not in self._exit_orders]
-            ask_price = market.get_price(self.trading_pair, False) # S: Bool is "not is_buy"
-            bid_price = market.get_price(self.trading_pair, True)  # S: Bool is  "is_buy"
-            list buys = []
-            list sells = []
-
-        if mode == PositionMode.ONEWAY:
-            # in one-way mode, only one active position is expected per time
-            if len(active_positions) > 1:
-                self.logger().error(f"Kindly ensure you do not interract with the exchange through other platforms and restart this strategy.")
-            else:
-                # Cancel open order that could potentially close position before reaching take_profit_limit
-                for order in unwanted_exit_orders:
-                    if active_positions[0].amount < 0 and order.is_buy:
-                        self.c_cancel_order(self._market_info, order.client_order_id)
-                        self.logger().info(f"Initiated cancellation of buy order {order.client_order_id} in favour of take profit order.")
-                    elif active_positions[0].amount > 0 and not order.is_buy:
-                        self.c_cancel_order(self._market_info, order.client_order_id)
-                        self.logger().info(f"Initiated cancellation of sell order {order.client_order_id} in favour of take profit order.")
-
-        for position in active_positions:
-            if (ask_price > position.entry_price and position.amount > 0) or (bid_price < position.entry_price and position.amount < 0):
-                # check if there is an active order to take profit, and create if none exists
-                profit_spread = self._long_profit_taking_spread if position.amount > 0 else self._short_profit_taking_spread
-                take_profit_price = position.entry_price * (Decimal("1") + profit_spread) if position.amount > 0 \
-                    else position.entry_price * (Decimal("1") - profit_spread)
-                price = market.c_quantize_order_price(self.trading_pair, take_profit_price)
-                old_exit_orders = [o for o in active_orders if (o.price != price and position.amount < 0 and o.client_order_id in self._exit_orders and o.is_buy)
-                                   or (o.price != price and position.amount > 0 and o.client_order_id in self._exit_orders and not o.is_buy)]
-                for old_order in old_exit_orders:
-                    self.c_cancel_order(self._market_info, old_order.client_order_id)
-                    self.logger().info(f"Initiated cancellation of previous take profit order {old_order.client_order_id} in favour of new take profit order.")
-                exit_order_exists = [o for o in active_orders if o.price == price]
-                if len(exit_order_exists) == 0:
-                    size = market.c_quantize_order_amount(self.trading_pair, abs(position.amount))
-                    if size > 0 and price > 0:
-                        if position.amount < 0: # S: if position.amount < 0 it is a short position -> we close it wiht a buy-order
-                            buys.append(PriceSize(price, size))
-                        else:                   # S: if position.amount > 0 it is a long position -> we close it wiht a sell-order
-                            sells.append(PriceSize(price, size))
-        return Proposal(buys, sells)
-
-    cdef c_trailing_stop_feature(self, object mode, list active_positions):
-        cdef:
-            ExchangeBase market = self._market_info.market
-            list active_orders = self.active_orders
-            list buys = []
-            list sells = []
-
-        # Notes:
-        # -The top bid is used for trailing short position and the top ask for long positions
-        # -Long positions are closed immediately when the current price is below the entry price
-        # -Short positions are closed immediately when the current price is above the entry price
-        # -Trailing wouldn't begin until current price hits the price set by ts_activation_spread
-
-        if mode == PositionMode.ONEWAY:
-            # in one-way mode, only one active position is expected per time
-            if len(active_positions) > 1:
-                self.logger().info(f"Kindly ensure you do not interract with the exchange through other platforms and restart this strategy.")
-            else:
-                # Cancel open order that could potentially close position and affect trailing stop functionality
-                unwanted_exit_orders = [o for o in active_orders if o.client_order_id not in self._exit_orders]
-                for order in unwanted_exit_orders:
-                    if active_positions[0].amount < 0 and order.is_buy:
-                        self.c_cancel_order(self._market_info, order.client_order_id)
-                        self.logger().info(f"Initiated cancellation of buy order {order.client_order_id} in favour of trailing stop.")
-                    elif active_positions[0].amount > 0 and not order.is_buy:
-                        self.c_cancel_order(self._market_info, order.client_order_id)
-                        self.logger().info(f"Initiated cancellation of sell order {order.client_order_id} in favour of trailing stop.")
-
-        for position in active_positions:
-            if position.amount == Decimal("0"):
-                continue
-            if position.amount > 0:  # this is a long position
-                top_ask = market.get_price(self.trading_pair, False)
-                if max(top_ask, self._ts_peak_ask_price) >= (position.entry_price * (Decimal("1") + self._ts_activation_spread)):
-                    if top_ask > self._ts_peak_ask_price or self._ts_peak_ask_price == Decimal("0"):
-                        estimated_exit = (top_ask * (Decimal("1") - self._ts_callback_rate))
-                        estimated_exit = "Nill" if estimated_exit <= position.entry_price else estimated_exit
-                        self.logger().info(f"New {top_ask} {self.quote_asset} peak price on sell order book, estimated exit price"
-                                           f" to lock profit is {estimated_exit} {self.quote_asset}.")
-                        self._ts_peak_ask_price = top_ask
-                    elif top_ask <= (self._ts_peak_ask_price * (Decimal("1") - self._ts_callback_rate)):
-                        exit_price = market.get_price_for_volume(self.trading_pair, False,
-                                                                 abs(position.amount)).result_price
-                        price = market.c_quantize_order_price(self.trading_pair, exit_price)
-
-                        # Do some checks to prevent duplicating orders to close positions
-                        exit_order_exists = [o for o in active_orders if o.client_order_id in self._exit_orders]
-                        create_order = True
-                        # self._exit_orders = [] if len(exit_order_exists) == 0 else self._exit_orders
-                        for order in exit_order_exists:
-                            if not order.is_buy:
-                                create_order = False
-                        if create_order is True and price > position.entry_price:
-                            sells.append(PriceSize(price, abs(position.amount)))
-            else:
-                top_bid = market.get_price(self.trading_pair, True)
-                if min(top_bid, self._ts_peak_bid_price) <= (position.entry_price * (Decimal("1") - self._ts_activation_spread)):
-                    if top_bid < self._ts_peak_bid_price or self._ts_peak_bid_price == Decimal("0"):
-                        estimated_exit = (top_bid * (Decimal("1") + self._ts_callback_rate))
-                        estimated_exit = "Nill" if estimated_exit >= position.entry_price else estimated_exit
-                        self.logger().info(f"New {top_bid} {self.quote_asset} peak price on buy order book, estimated exit price"
-                                           f" to lock profit is {estimated_exit} {self.quote_asset}.")
-                        self._ts_peak_bid_price = top_bid
-                    elif top_bid >= (self._ts_peak_bid_price * (Decimal("1") + self._ts_callback_rate)):
-                        exit_price = market.get_price_for_volume(self.trading_pair, True,
-                                                                 abs(position.amount)).result_price
-                        price = market.c_quantize_order_price(self.trading_pair, exit_price)
-
-                        # Do some checks to prevent duplicating orders to close positions
-                        exit_order_exists = [o for o in active_orders if o.client_order_id in self._exit_orders]
-                        create_order = True
-                        # self._exit_orders = [] if len(exit_order_exists) == 0 else self._exit_orders
-                        for order in exit_order_exists:
-                            if order.is_buy:
-                                create_order = False
-                        if create_order is True and price < position.entry_price:
-                            buys.append(PriceSize(price, abs(position.amount)))
-            return Proposal(buys, sells)
-
-    cdef c_stop_loss_feature(self, object mode, list active_positions):
-        cdef:
-            ExchangeBase market = self._market_info.market
-            list active_orders = self.active_orders
-            list all_exit_orders = [o for o in active_orders if o.client_order_id not in self._exit_orders]
-            top_ask = market.get_price(self.trading_pair, False)
-            top_bid = market.get_price(self.trading_pair, True)
-            list buys = []
-            list sells = []
-
-        for position in active_positions:
-            # check if stop loss order needs to be placed
-            stop_loss_price = position.entry_price * (Decimal("1") + self._stop_loss_spread) if position.amount < 0 \
-                else position.entry_price * (Decimal("1") - self._stop_loss_spread)
-            if (top_ask <= stop_loss_price and position.amount > 0):
-                price = market.c_quantize_order_price(self.trading_pair, stop_loss_price)
-                take_profit_orders = [o for o in active_orders if (not o.is_buy and o.price > price and o.client_order_id in self._exit_orders)]
-                # cancel take profit orders if they exist
-                for old_order in take_profit_orders:
-                    self.c_cancel_order(self._market_info, old_order.client_order_id)
-                exit_order_exists = [o for o in active_orders if o.price == price and not o.is_buy]
-                if len(exit_order_exists) == 0:
-                    size = market.c_quantize_order_amount(self.trading_pair, abs(position.amount))
-                    if size > 0 and price > 0:
-                        self.logger().info(f"Creating stop loss sell order to close long position.")
-                        sells.append(PriceSize(price, size))
-            elif (top_bid >= stop_loss_price and position.amount < 0):
-                price = market.c_quantize_order_price(self.trading_pair, stop_loss_price)
-                take_profit_orders = [o for o in active_orders if (o.is_buy and o.price < price and o.client_order_id in self._exit_orders)]
-                # cancel take profit orders if they exist
-                for old_order in take_profit_orders:
-                    self.c_cancel_order(self._market_info, old_order.client_order_id)
-                exit_order_exists = [o for o in active_orders if o.price == price and o.is_buy]
-                if len(exit_order_exists) == 0:
-                    size = market.c_quantize_order_amount(self.trading_pair, abs(position.amount))
-                    if size > 0 and price > 0:
-                        self.logger().info(f"Creating stop loss buy order to close short position.")
-                        buys.append(PriceSize(price, size))
-        return Proposal(buys, sells)
 
     cdef object c_create_base_proposal_buy(self):
         cdef:
@@ -1247,8 +1055,9 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                         expiration_seconds=expiration_seconds,
                         position_action=position_action
                     )
-                    if position_action == PositionAction.CLOSE:
-                        self._exit_orders.append(bid_order_id)
+                    # if position_action == PositionAction.CLOSE:
+                    #     self._exit_orders.append(bid_order_id)
+
                     orders_created = True
 
         if len(proposal.sells) > 0:
