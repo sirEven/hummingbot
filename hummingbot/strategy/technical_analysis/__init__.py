@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 from .technical_analysis import TechnicalAnalysisStrategy
-from .ta import TA
 from .asset_price_delegate import AssetPriceDelegate
 from .order_book_asset_price_delegate import OrderBookAssetPriceDelegate
 from .api_asset_price_delegate import APIAssetPriceDelegate

@@ -6,7 +6,7 @@ from hummingbot.strategy.strategy_base cimport StrategyBase
 
 cdef class TechnicalAnalysisStrategy(StrategyBase):
     cdef:
-        object _ta_pattern
+        object _ta
         object _market_info
         int _leverage
         object _position_mode

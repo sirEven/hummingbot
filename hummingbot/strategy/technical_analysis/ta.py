@@ -9,7 +9,7 @@ class TA():
         self.__candle_part = candle_part
         self.__trade_volume = trade_volume
        
-        self.__signal = "hold"
+        self.__signal = "buy"
         self.__tick_count = 0
 
     @property

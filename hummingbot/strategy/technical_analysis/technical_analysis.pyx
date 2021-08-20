@@ -68,86 +68,86 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
     def __init__(self,
                  ta: TA,
                  market_info: MarketTradingPairTuple,
-                 leverage: int,
-                 position_mode: str,
-                 bid_spread: Decimal,
-                 ask_spread: Decimal,
+                #  position_mode: str,
+                #  bid_spread: Decimal,
+                #  ask_spread: Decimal,
                  order_amount: Decimal,
-                 position_management: str,
-                 long_profit_taking_spread: Decimal,
-                 short_profit_taking_spread: Decimal,
-                 ts_activation_spread: Decimal,
-                 ts_callback_rate: Decimal,
-                 stop_loss_spread: Decimal,
-                 close_position_order_type: str,
-                 order_levels: int = 1,
-                 order_level_spread: Decimal = s_decimal_zero,
-                 order_level_amount: Decimal = s_decimal_zero,
-                 order_refresh_time: float = 30.0,
-                 order_refresh_tolerance_pct: Decimal = s_decimal_neg_one,
-                 filled_order_delay: float = 60.0,
-                 hanging_orders_enabled: bool = False,
-                 hanging_orders_cancel_pct: Decimal = Decimal("0.1"),
-                 order_optimization_enabled: bool = False,
-                 ask_order_optimization_depth: Decimal = s_decimal_zero,
-                 bid_order_optimization_depth: Decimal = s_decimal_zero,
+                #  position_management: str,
+                #  long_profit_taking_spread: Decimal,
+                #  short_profit_taking_spread: Decimal,
+                #  ts_activation_spread: Decimal,
+                #  ts_callback_rate: Decimal,
+                #  stop_loss_spread: Decimal,
+                #  close_position_order_type: str,
+                #  order_levels: int = 1,
+                #  order_level_spread: Decimal = s_decimal_zero,
+                #  order_level_amount: Decimal = s_decimal_zero,
+                #  order_refresh_time: float = 30.0,
+                #  order_refresh_tolerance_pct: Decimal = s_decimal_neg_one,
+                #  filled_order_delay: float = 60.0,
+                #  hanging_orders_enabled: bool = False,
+                #  hanging_orders_cancel_pct: Decimal = Decimal("0.1"),
+                #  order_optimization_enabled: bool = False,
+                #  ask_order_optimization_depth: Decimal = s_decimal_zero,
+                #  bid_order_optimization_depth: Decimal = s_decimal_zero,
+                 leverage: int = 1,
                  add_transaction_costs_to_orders: bool = False,
                  asset_price_delegate: AssetPriceDelegate = None,
                  price_type: str = "mid_price",
-                 take_if_crossed: bool = False,
-                 price_ceiling: Decimal = s_decimal_neg_one,
-                 price_floor: Decimal = s_decimal_neg_one,
-                 ping_pong_enabled: bool = False,
+                #  take_if_crossed: bool = False,
+                #  price_ceiling: Decimal = s_decimal_neg_one,
+                #  price_floor: Decimal = s_decimal_neg_one,
+                #  ping_pong_enabled: bool = False,
                  logging_options: int = OPTION_LOG_ALL,
                  status_report_interval: float = 900,
-                 minimum_spread: Decimal = Decimal(0),
+                #  minimum_spread: Decimal = Decimal(0),
                  hb_app_notification: bool = False,
-                 order_override: Dict[str, List[str]] = {},
+                #  order_override: Dict[str, List[str]] = {},
                  ):
 
-        if price_ceiling != s_decimal_neg_one and price_ceiling < price_floor:
-            raise ValueError("Parameter price_ceiling cannot be lower than price_floor.")
+        # if price_ceiling != s_decimal_neg_one and price_ceiling < price_floor:
+        #     raise ValueError("Parameter price_ceiling cannot be lower than price_floor.")
 
         super().__init__()
         self._ta = ta
         self._sb_order_tracker = PerpetualMarketMakingOrderTracker()
         self._market_info = market_info
         self._leverage = leverage
-        self._position_mode = PositionMode.HEDGE if position_mode == "Hedge" else PositionMode.ONEWAY
-        self._bid_spread = bid_spread
-        self._ask_spread = ask_spread
-        self._minimum_spread = minimum_spread
+        # self._position_mode = PositionMode.HEDGE if position_mode == "Hedge" else PositionMode.ONEWAY
+        # self._bid_spread = bid_spread
+        # self._ask_spread = ask_spread
+        # self._minimum_spread = minimum_spread
         self._order_amount = order_amount
-        self._position_management = position_management
-        self._long_profit_taking_spread = long_profit_taking_spread
-        self._short_profit_taking_spread = short_profit_taking_spread
-        self._ts_activation_spread = ts_activation_spread
-        self._ts_callback_rate = ts_callback_rate
-        self._stop_loss_spread = stop_loss_spread
-        self._close_position_order_type = OrderType.MARKET if close_position_order_type == "MARKET" else OrderType.LIMIT
-        self._order_levels = order_levels
-        self._buy_levels = order_levels
-        self._sell_levels = order_levels
-        self._order_level_spread = order_level_spread
-        self._order_level_amount = order_level_amount
-        self._order_refresh_time = order_refresh_time
-        self._order_refresh_tolerance_pct = order_refresh_tolerance_pct
-        self._filled_order_delay = filled_order_delay
-        self._hanging_orders_enabled = hanging_orders_enabled
-        self._hanging_orders_cancel_pct = hanging_orders_cancel_pct
-        self._order_optimization_enabled = order_optimization_enabled
-        self._ask_order_optimization_depth = ask_order_optimization_depth
-        self._bid_order_optimization_depth = bid_order_optimization_depth
+        # self._position_management = position_management
+        # self._long_profit_taking_spread = long_profit_taking_spread
+        # self._short_profit_taking_spread = short_profit_taking_spread
+        # self._ts_activation_spread = ts_activation_spread
+        # self._ts_callback_rate = ts_callback_rate
+        # self._stop_loss_spread = stop_loss_spread
+        # self._close_position_order_type = OrderType.MARKET if close_position_order_type == "MARKET" else OrderType.LIMIT
+        # self._order_levels = order_levels
+        # self._buy_levels = order_levels
+        # self._sell_levels = order_levels
+        # self._order_level_spread = order_level_spread
+        # self._order_level_amount = order_level_amount
+        # self._order_refresh_time = order_refresh_time
+        # self._order_refresh_tolerance_pct = order_refresh_tolerance_pct
+        # self._filled_order_delay = filled_order_delay
+        # self._hanging_orders_enabled = hanging_orders_enabled
+        # self._hanging_orders_cancel_pct = hanging_orders_cancel_pct
+        # self._order_optimization_enabled = order_optimization_enabled
+        # self._ask_order_optimization_depth = ask_order_optimization_depth
+        # self._bid_order_optimization_depth = bid_order_optimization_depth
         self._add_transaction_costs_to_orders = add_transaction_costs_to_orders
         self._asset_price_delegate = asset_price_delegate
         self._price_type = self.get_price_type(price_type)
-        self._take_if_crossed = take_if_crossed
-        self._price_ceiling = price_ceiling
-        self._price_floor = price_floor
-        self._ping_pong_enabled = ping_pong_enabled
-        self._ping_pong_warning_lines = []
+        # self._take_if_crossed = take_if_crossed
+        # self._price_ceiling = price_ceiling
+        # self._price_floor = price_floor
+        # self._ping_pong_enabled = ping_pong_enabled
+        # self._ping_pong_warning_lines = []
         self._hb_app_notification = hb_app_notification
-        self._order_override = order_override
+        # self._order_override = order_override
 
         self._cancel_timestamp = 0
         self._create_timestamp = 0
