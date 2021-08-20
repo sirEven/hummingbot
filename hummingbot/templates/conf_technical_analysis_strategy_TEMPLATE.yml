@@ -120,8 +120,26 @@ price_source_market: null
 # An external api that returns price (for custom_api pricing source).
 price_source_custom_api: null
 
-#Take order if they cross order book when external price source is enabled
+# Take order if they cross order book when external price source is enabled
 take_if_crossed: null
+
+# S: Here we save ta strategy specific parameters
+
+# What TA-Pattern to look for
+ta_pattern: null
+
+# What time resolution to use for candles (in seconds)
+time_resolution: null
+
+# What time_period to observe the pattern (how many candles)
+period: null
+
+# Which candle part to observe (open, high, low close)
+candle_part: null
+
+# How much of your available balance (in quote currency) should be traded (percentage or absolute value)
+trade_volume: null
+
 
 # Use user provided orders to directly override the orders placed by order_amount and order_level_parameter
 # This is an advanced feature and user is expected to directly edit this field in config file

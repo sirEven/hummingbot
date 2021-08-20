@@ -388,4 +388,40 @@ technical_analysis_config_map = {
                   required_if=lambda: False,
                   default=None,
                   type_str="json"),
+    "ta_pattern":
+        ConfigVar(key="ta_pattern",
+                  prompt="Which TA-Pattern do you want your bot to base its decisions on? >>> ",
+                  default="hullMA",
+                  type_str="str",
+                  validator=lambda s: None if s in {"hullMA"} else # S: In these brackets we can add further TA-Patterns
+                  "This Pattern for technical analysis is not yet implemented.",
+                  prompt_on_new=True),
+    "time_resolution":
+        ConfigVar(key="time_resolution",
+                  prompt="What time resolution should your bot observe to find the pattern? In other words: What's the duration of each candle (in seconds)? >>> ",
+                  type_str="int",
+                  validator=lambda v: validate_int(v, min_value=5, inclusive=False),
+                  default=60),
+    "period":
+        ConfigVar(key="period",
+                  prompt="What period should the pattern be based on? In other words: How many candles should the processed MA include? >>> ",
+                  type_str="int",
+                  validator=lambda v: validate_int(v, min_value=2, inclusive=False),
+                  default=17,
+                  prompt_on_new=True),
+    "candle_part":
+        ConfigVar(key="candle_part",
+                  prompt="Which candle part do you want to observe? >>> ",
+                  default="close",
+                  type_str="str",
+                  validator=lambda s: None if s in {"open", "high", "low", "close"} else 
+                  "Invalid candle part.",
+                  prompt_on_new=True),
+    "trade_volume":
+        ConfigVar(key="trade_volume",
+                  prompt="How much of your available base cuccency (e.g.: 20%) do you wish to be used per trade? >>> ",
+                  type_str="decimal",
+                  validator=lambda v: validate_decimal(v, 1, 100, inclusive=False),
+                  default=Decimal("10"),
+                  prompt_on_new=True)
 }

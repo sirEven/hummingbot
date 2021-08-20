@@ -85,5 +85,5 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
     cdef c_cancel_orders_below_min_spread(self)
     cdef bint c_to_create_orders(self, object proposal)
     cdef c_execute_order_proposal(self, object proposal, object position_action)
-    cdef c_execute_orders_proposal(self, object proposal, object position_action)
+    # cdef c_execute_orders_proposal(self, object proposal, object position_action)
     cdef set_timers(self)

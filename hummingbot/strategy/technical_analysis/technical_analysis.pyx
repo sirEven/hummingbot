@@ -66,7 +66,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
         return pmm_logger
 
     def __init__(self,
-                 ta_pattern: TA,
+                 ta: TA,
                  market_info: MarketTradingPairTuple,
                  leverage: int,
                  position_mode: str,
@@ -109,7 +109,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
             raise ValueError("Parameter price_ceiling cannot be lower than price_floor.")
 
         super().__init__()
-        self._ta_pattern = ta_pattern
+        self._ta = ta
         self._sb_order_tracker = PerpetualMarketMakingOrderTracker()
         self._market_info = market_info
         self._leverage = leverage
@@ -531,8 +531,6 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
 
     # The following exposed Python functions are meant for unit tests
     # ---------------------------------------------------------------
-    def execute_orders_proposal(self, proposal: Proposal, position_action: PositionAction):
-        return self.c_execute_orders_proposal(proposal, position_action)
 
     def cancel_order(self, order_id: str):
         return self.c_cancel_order(self._market_info, order_id)
@@ -577,7 +575,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                                           f"making may be dangerous when markets or networks are unstable.")
 
             
-            self.logger().info("Tick Count: {}.".format(self._ta_pattern.tick_count))
+            self.logger().info("Tick Count: {}.".format(self._ta.tick_count))
             
             # S: If no positions exists, make new one WIP: HERE WE NEED TO SAY "IF BUY/SELL SIGNAL, CREATE BUY/SELL PROPORSAL"
             if len(session_positions) == 0:
@@ -587,9 +585,9 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                 # asset_mid_price = self.c_set_mid_price(market_info)
                 if self._create_timestamp <= self._current_timestamp:
                     # 1. Create base order proposals
-                    if self._ta_pattern.signal == "buy":
+                    if self._ta.signal == "buy":
                         proposal = self.c_create_base_proposal_buy()
-                    elif self._ta_pattern.signal == "sell":
+                    elif self._ta.signal == "sell":
                         proposal = self.c_create_base_proposal_sell()
 
                 if self.c_to_create_orders(proposal):
@@ -601,15 +599,15 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                 
             # S: Else, manage those positions
             else:
-                if self._ta_pattern.tick_count == 15:
+                if self._ta.tick_count == 15:
                     self.c_manage_positions(session_positions)
-                    self._ta_pattern.reset_tick_count()
-                    self._ta_pattern.switch_signal()
+                    self._ta.reset_tick_count()
+                    self._ta.switch_signal()
 
         finally:
             self._last_timestamp = timestamp
             # S: Temporary tick counting for finding the right infrastructure logic
-            self._ta_pattern.increment_tick_count()
+            self._ta.increment_tick_count()
             
 
     cdef c_manage_positions(self, list session_positions):
@@ -1032,7 +1030,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
         if len(proposal.buys) > 0: 
             if position_action == PositionAction.CLOSE:
                 # S: Find out how to close position
-                # S: Actually we need to close an open position by creating an opposite order
+                # S: Actually we need to close an open position by creating an opposite order  /done, works fine
                 # S: https://docs.hummingbot.io/strategies/perpetual-market-making/#creating-orders-to-close-a-position
                 
                 self.logger().info("Here we would close the SHORT position")
@@ -1087,7 +1085,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
         if len(proposal.sells) > 0:
             if position_action == PositionAction.CLOSE:
                 # S: Find out how to close position
-                # S: Actually we need to close an open position by creating an opposite order
+                # S: Actually we need to close an open position by creating an opposite order /done, works fine
                 # S: https://docs.hummingbot.io/strategies/perpetual-market-making/#creating-orders-to-close-a-position
 
                 self.logger().info("Here we would close the LONG position")
@@ -1112,7 +1110,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                     # if position_action == PositionAction.CLOSE:
                     #     self._exit_orders.append(ask_order_id)
                     orders_created = True 
-                    
+
             else:
                 if self._logging_options & self.OPTION_LOG_CREATE_ORDER:
                     price_quote_str = [f"{sell.size.normalize()} {self.base_asset}, "
@@ -1134,70 +1132,6 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                     # if position_action == PositionAction.CLOSE:
                     #     self._exit_orders.append(ask_order_id)
                     orders_created = True        
-
-
-
-    cdef c_execute_orders_proposal(self, object proposal, object position_action):
-        cdef:
-            double expiration_seconds = NaN
-            str bid_order_id, ask_order_id
-            bint orders_created = False
-            object order_type = self._close_order_type
-
-        if len(proposal.buys) > 0:
-            if position_action == PositionAction.CLOSE:
-                if self._current_timestamp < self._next_buy_exit_order_timestamp:
-                    return
-                else:
-                    self._next_buy_exit_order_timestamp = self._current_timestamp + self.filled_order_delay
-            if self._logging_options & self.OPTION_LOG_CREATE_ORDER:
-                price_quote_str = [f"{buy.size.normalize()} {self.base_asset}, "
-                                   f"{buy.price.normalize()} {self.quote_asset}"
-                                   for buy in proposal.buys]
-                self.logger().info(
-                    f"({self.trading_pair}) Creating {len(proposal.buys)} {self._close_order_type.name} bid orders "
-                    f"at (Size, Price): {price_quote_str} to {position_action.name} position."
-                )
-            for buy in proposal.buys:
-                bid_order_id = self.c_buy_with_specific_market(
-                    self._market_info,
-                    buy.size,
-                    order_type=order_type,
-                    price=buy.price,
-                    expiration_seconds=expiration_seconds,
-                    position_action=position_action
-                )
-                if position_action == PositionAction.CLOSE:
-                    self._exit_orders.append(bid_order_id)
-                orders_created = True
-        if len(proposal.sells) > 0:
-            if position_action == PositionAction.CLOSE:
-                if self._current_timestamp < self._next_sell_exit_order_timestamp:
-                    return
-                else:
-                    self._next_sell_exit_order_timestamp = self._current_timestamp + self.filled_order_delay
-            if self._logging_options & self.OPTION_LOG_CREATE_ORDER:
-                price_quote_str = [f"{sell.size.normalize()} {self.base_asset}, "
-                                   f"{sell.price.normalize()} {self.quote_asset}"
-                                   for sell in proposal.sells]
-                self.logger().info(
-                    f"({self.trading_pair}) Creating {len(proposal.sells)}  {self._close_order_type.name} ask "
-                    f"orders at (Size, Price): {price_quote_str} to {position_action.name} position."
-                )
-            for sell in proposal.sells:
-                ask_order_id = self.c_sell_with_specific_market(
-                    self._market_info,
-                    sell.size,
-                    order_type=order_type,
-                    price=sell.price,
-                    expiration_seconds=expiration_seconds,
-                    position_action=position_action
-                )
-                if position_action == PositionAction.CLOSE:
-                    self._exit_orders.append(ask_order_id)
-                orders_created = True
-        if orders_created:
-            self.set_timers()
 
     cdef set_timers(self):
         cdef double next_cycle = self._current_timestamp + self._order_refresh_time

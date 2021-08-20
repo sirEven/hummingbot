@@ -74,10 +74,17 @@ def start(self):
             asset_price_delegate = APIAssetPriceDelegate(price_source_custom_api)
         take_if_crossed = c_map.get("take_if_crossed").value
 
+        # S: ta strategy specific parameters
+        ta_pattern: c_map.get("ta_pattern").value
+        time_resolution: c_map.get("time_resolution").value
+        period: c_map.get("period").value
+        candle_part: c_map.get("candle_part").value
+        trade_volume: c_map.get("trade_volume").value
+
         strategy_logging_options = TechnicalAnalysisStrategy.OPTION_LOG_ALL
 
         self.strategy = TechnicalAnalysisStrategy(
-            ta_pattern = TA("hullMA"),
+            ta = TA(ta_pattern, time_resolution, period, candle_part, trade_volume),
             market_info=MarketTradingPairTuple(*maker_data),
             leverage=leverage,
             position_mode=position_mode,
