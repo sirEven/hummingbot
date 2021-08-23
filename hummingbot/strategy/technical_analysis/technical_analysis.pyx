@@ -625,14 +625,13 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
             
             self.logger().info(f"position amount is {position.amount}")
 
-            if position.amount > 0: # S: It is a long position -> we need to close it with a sell-order TODO: ask_price (if necessary)
-                
+            if position.amount > 0: # S: It is a long position -> we need to close it with a sell-order
                 size = market.c_quantize_order_amount(self.trading_pair, abs(position.amount))
                 price = market.get_price(self.trading_pair, False)
 
-                sells.append(PriceSize(price, size)) # S: CHECK AGAIN if we add to the correct side here!! //I think we do.
+                sells.append(PriceSize(price, size)) # S: CHECK AGAIN if we add to the correct side here!! // I think we do.
 
-            else: # S: It is a short position -> we need to close it with a buy-order TODO: bid_price (if necessary)
+            else: # S: It is a short position -> we need to close it with a buy-order 
                 size = market.c_quantize_order_amount(self.trading_pair, abs(position.amount))
                 price = market.get_price(self.trading_pair, True)
 
@@ -648,9 +647,14 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
             ExchangeBase market = self._market_info.market
             list buys = []
             list sells = []
-
-        price = market.get_price(self.trading_pair, True) # S: Correct way to set bid price (works and results in filled order aka a open position)
-        size = self._order_amount
+        # S: get available quote balance
+        quote_balance = market.c_get_available_balance(self.quote_asset)
+        price = market.get_price(self.trading_pair, True) # S: Correct way to set bid price (works and results in filled order aka an open position)
+        
+        # S: Calculate "user set %" of available quote balance
+        quote_amount = Decimal((quote_balance * self._ta.trade_volume)/100)
+        trade_amount = Decimal(quote_amount/price)
+        size = trade_amount # self._order_amount  
         size = market.c_quantize_order_amount(self.trading_pair, size)
         if size > 0:
             buys.append(PriceSize(price, size))
@@ -662,9 +666,14 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
             ExchangeBase market = self._market_info.market
             list buys = []
             list sells = []
-
-        price = market.get_price(self.trading_pair, False) # S: Correct way to set ask price (works and results in filled order aka a open position)
-        size = self._order_amount 
+        # S: get available quote balance
+        quote_balance = market.c_get_available_balance(self.quote_asset)
+        price = market.get_price(self.trading_pair, False) # S: Correct way to set ask price (works and results in filled order aka an open position)
+        
+        # S: Calculate "user set %" of available quote balance
+        quote_amount = Decimal((quote_balance * self._ta.trade_volume)/100)
+        trade_amount = Decimal(quote_amount/price)
+        size = trade_amount # self._order_amount
         size = market.c_quantize_order_amount(self.trading_pair, size)
         if size > 0:
             sells.append(PriceSize(price, size))
@@ -956,63 +965,63 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
 
     # Cancel active non hanging orders
     # Return value: whether order cancellation is deferred.
-    cdef c_cancel_active_orders(self, object proposal):
-        if self._cancel_timestamp > self._current_timestamp:
-            return
+    # cdef c_cancel_active_orders(self, object proposal):
+    #     if self._cancel_timestamp > self._current_timestamp:
+    #         return
 
-        cdef:
-            list active_orders = self.active_non_hanging_orders
-            list active_buy_prices = []
-            list active_sells = []
-            bint to_defer_canceling = False
-        if len(active_orders) == 0:
-            return
-        if proposal is not None and self._order_refresh_tolerance_pct >= 0:
+    #     cdef:
+    #         list active_orders = self.active_non_hanging_orders
+    #         list active_buy_prices = []
+    #         list active_sells = []
+    #         bint to_defer_canceling = False
+    #     if len(active_orders) == 0:
+    #         return
+    #     if proposal is not None and self._order_refresh_tolerance_pct >= 0:
 
-            active_buy_prices = [Decimal(str(o.price)) for o in active_orders if o.is_buy]
-            active_sell_prices = [Decimal(str(o.price)) for o in active_orders if not o.is_buy]
-            proposal_buys = [buy.price for buy in proposal.buys]
-            proposal_sells = [sell.price for sell in proposal.sells]
-            if self.c_is_within_tolerance(active_buy_prices, proposal_buys) and \
-                    self.c_is_within_tolerance(active_sell_prices, proposal_sells):
-                to_defer_canceling = True
+    #         active_buy_prices = [Decimal(str(o.price)) for o in active_orders if o.is_buy]
+    #         active_sell_prices = [Decimal(str(o.price)) for o in active_orders if not o.is_buy]
+    #         proposal_buys = [buy.price for buy in proposal.buys]
+    #         proposal_sells = [sell.price for sell in proposal.sells]
+    #         if self.c_is_within_tolerance(active_buy_prices, proposal_buys) and \
+    #                 self.c_is_within_tolerance(active_sell_prices, proposal_sells):
+    #             to_defer_canceling = True
 
-        if not to_defer_canceling:
-            for order in active_orders:
-                self.c_cancel_order(self._market_info, order.client_order_id)
-        else:
-            self.logger().info(f"Not cancelling active orders since difference between new order prices "
-                               f"and current order prices is within "
-                               f"{self._order_refresh_tolerance_pct:.2%} order_refresh_tolerance_pct")
-            self.set_timers()
+    #     if not to_defer_canceling:
+    #         for order in active_orders:
+    #             self.c_cancel_order(self._market_info, order.client_order_id)
+    #     else:
+    #         self.logger().info(f"Not cancelling active orders since difference between new order prices "
+    #                            f"and current order prices is within "
+    #                            f"{self._order_refresh_tolerance_pct:.2%} order_refresh_tolerance_pct")
+    #         self.set_timers()
 
-    cdef c_cancel_hanging_orders(self):
-        cdef:
-            object price = self.get_price()
-            list active_orders = self.active_orders
-            list orders
-            LimitOrder order
-        for h_order_id in self._hanging_order_ids:
-            orders = [o for o in active_orders if o.client_order_id == h_order_id]
-            if orders and price > 0:
-                order = orders[0]
-                if abs(order.price - price)/price >= self._hanging_orders_cancel_pct:
-                    self.c_cancel_order(self._market_info, order.client_order_id)
+    # cdef c_cancel_hanging_orders(self):
+    #     cdef:
+    #         object price = self.get_price()
+    #         list active_orders = self.active_orders
+    #         list orders
+    #         LimitOrder order
+    #     for h_order_id in self._hanging_order_ids:
+    #         orders = [o for o in active_orders if o.client_order_id == h_order_id]
+    #         if orders and price > 0:
+    #             order = orders[0]
+    #             if abs(order.price - price)/price >= self._hanging_orders_cancel_pct:
+    #                 self.c_cancel_order(self._market_info, order.client_order_id)
 
     # Cancel Non-Hanging, Active Orders if Spreads are below minimum_spread
-    cdef c_cancel_orders_below_min_spread(self):
-        cdef:
-            list active_orders = self.market_info_to_active_orders.get(self._market_info, [])
-            object price = self.get_price()
-        active_orders = [order for order in active_orders
-                         if order.client_order_id not in self._hanging_order_ids]
-        for order in active_orders:
-            negation = -1 if order.is_buy else 1
-            if (negation * (order.price - price) / price) < self._minimum_spread:
-                self.logger().info(f"Order is below minimum spread ({self._minimum_spread})."
-                                   f" Cancelling Order: ({'Buy' if order.is_buy else 'Sell'}) "
-                                   f"ID - {order.client_order_id}")
-                self.c_cancel_order(self._market_info, order.client_order_id)
+    # cdef c_cancel_orders_below_min_spread(self):
+    #     cdef:
+    #         list active_orders = self.market_info_to_active_orders.get(self._market_info, [])
+    #         object price = self.get_price()
+    #     active_orders = [order for order in active_orders
+    #                      if order.client_order_id not in self._hanging_order_ids]
+    #     for order in active_orders:
+    #         negation = -1 if order.is_buy else 1
+    #         if (negation * (order.price - price) / price) < self._minimum_spread:
+    #             self.logger().info(f"Order is below minimum spread ({self._minimum_spread})."
+    #                                f" Cancelling Order: ({'Buy' if order.is_buy else 'Sell'}) "
+    #                                f"ID - {order.client_order_id}")
+    #             self.c_cancel_order(self._market_info, order.client_order_id)
 
     # S: We don't need this in the future
     cdef bint c_to_create_orders(self, object proposal):
@@ -1044,21 +1053,31 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                         f"at (Size, Price): {price_quote_str} to {position_action.name} position."
                     )
                 
-                for buy in proposal.buys: 
+                for buy in proposal.buys:
+                    
+                    market = self._market_info.market
+
                     bid_order_id = self.c_buy_with_specific_market(
                         self._market_info,
                         buy.size,
                         order_type=order_type,
-                        price=buy.price,
+                        price=buy.price, # S: Debug: Try to set the current bid-price here to prevent cancellation
                         expiration_seconds=expiration_seconds,
                         position_action=position_action
                     )
-                    # if position_action == PositionAction.CLOSE:
-                    #     self._exit_orders.append(bid_order_id)
+
+                    price = market.get_price(self.trading_pair, True)
+                    self.logger().info(
+                        f"PROPOSAL PRICE: {buy.price} vs. EXCHANGE PRICE {price}"
+                    )
+                    
+                    # S: TODO: Try out, if we even need this if block
+                    if position_action == PositionAction.CLOSE:
+                        self._exit_orders.append(bid_order_id)
 
                     orders_created = True
 
-            else: 
+            else: # S: Open new Position
                 if self._logging_options & self.OPTION_LOG_CREATE_ORDER:
                     price_quote_str = [f"{buy.size.normalize()} {self.base_asset}, "
                                     f"{buy.price.normalize()} {self.quote_asset}"
@@ -1073,12 +1092,14 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                         self._market_info,
                         buy.size,
                         order_type=order_type,
-                        price=buy.price,
+                        price=buy.price, # S: Debug: Try to set the current bid-price here to prevent cancellation
                         expiration_seconds=expiration_seconds,
                         position_action=position_action
                     )
-                    # if position_action == PositionAction.CLOSE:
-                    #     self._exit_orders.append(bid_order_id)
+
+                    # S: TODO: Try out, if we even need this if block
+                    if position_action == PositionAction.CLOSE:
+                        self._exit_orders.append(bid_order_id)
 
                     orders_created = True
 
@@ -1099,6 +1120,9 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                         f"orders at (Size, Price): {price_quote_str} to {position_action.name} position."
                     )
                 for sell in proposal.sells:
+                    
+                    market = self._market_info.market
+
                     ask_order_id = self.c_sell_with_specific_market(
                         self._market_info,
                         sell.size,
@@ -1107,8 +1131,14 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                         expiration_seconds=expiration_seconds,
                         position_action=position_action
                     )
-                    # if position_action == PositionAction.CLOSE:
-                    #     self._exit_orders.append(ask_order_id)
+                    price = market.get_price(self.trading_pair, False)
+                    self.logger().info(
+                        f"PROPOSAL PRICE: {sell.price} vs. EXCHANGE PRICE {price}"
+                    )
+                    # S: TODO: Try out, if we even need this if block
+                    if position_action == PositionAction.CLOSE:
+                        self._exit_orders.append(ask_order_id)
+
                     orders_created = True 
 
             else:
@@ -1129,8 +1159,10 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                         expiration_seconds=expiration_seconds,
                         position_action=position_action
                     )
-                    # if position_action == PositionAction.CLOSE:
-                    #     self._exit_orders.append(ask_order_id)
+                    # S: TODO: Try out, if we even need this if block
+                    if position_action == PositionAction.CLOSE:
+                        self._exit_orders.append(ask_order_id)
+
                     orders_created = True        
 
     cdef set_timers(self):

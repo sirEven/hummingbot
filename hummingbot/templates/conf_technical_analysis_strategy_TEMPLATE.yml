@@ -42,7 +42,7 @@ leverage: null
 # order_refresh_tolerance_pct: null
 
 # Size of your bid and ask order.
-# order_amount: null
+order_amount: null
 
 # Which position management feature to use. Trailing stop and take profit features are currently supported
 # position_management: null
