@@ -583,7 +583,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
             if self._ta.tick_count_is_zero:
                 self._ta.open_current_candle(current_mid_price, self._current_timestamp)
                 self.logger().info(f"candle open now at: {self._ta.current_candle.open} at {self._ta.current_candle.open_dt}")
-
+            
             self._ta.increment_tick_count()
 
             if self._ta.candle_not_done:

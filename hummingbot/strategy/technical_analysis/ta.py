@@ -65,7 +65,6 @@ class TA():
         return self.__tick_count == 0
     
     def open_current_candle(self, current_price, current_timestamp):
-        self.__current_candle = None
         self.__current_candle = Candle(self.time_resolution, current_price, current_timestamp)
     
     def increment_tick_count(self):
@@ -83,6 +82,8 @@ class TA():
     
     def move_current_candle(self):
         self.__candles.append(self.__current_candle)
+        if len(self.__candles) > self.__period:
+            self.__candles.pop(0)
     
     def switch_signal(self):
         if self.__signal == "buy":
