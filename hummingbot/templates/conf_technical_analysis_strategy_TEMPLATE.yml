@@ -106,10 +106,10 @@ order_amount: null
 add_transaction_costs: null
 
 # The price source (current_market/external_market/custom_api).
-# price_source: null
+price_source: null
 
 # The price type (mid_price/last_price/last_own_trade_price/best_bid/best_ask).
-# price_type: null
+price_type: null
 
 # An external exchange name (for external exchange pricing source).
 # price_source_derivative: null

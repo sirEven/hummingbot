@@ -79,7 +79,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
     cdef c_filter_out_takers(self, object proposal)
     cdef c_apply_order_optimization(self, object proposal)
     cdef c_apply_add_transaction_costs(self, object proposal)
-    cdef bint c_is_within_tolerance(self, list current_prices, list proposal_prices)
+    # cdef bint c_is_within_tolerance(self, list current_prices, list proposal_prices)
     # cdef c_cancel_active_orders(self, object proposal)
     # cdef c_cancel_hanging_orders(self)
     # cdef c_cancel_orders_below_min_spread(self)

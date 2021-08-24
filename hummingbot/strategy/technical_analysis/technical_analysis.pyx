@@ -42,6 +42,7 @@ from .asset_price_delegate import AssetPriceDelegate
 from .order_book_asset_price_delegate cimport OrderBookAssetPriceDelegate
 
 from .ta import TA
+from .candle import Candle
 
 NaN = float("nan")
 s_decimal_zero = Decimal(0)
@@ -574,10 +575,36 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                     self.logger().warning(f"WARNING: Some markets are not connected or are down at the moment. Market "
                                           f"making may be dangerous when markets or networks are unstable.")
 
-            
+            # S: Here we start with Candle infrastructure TODO: WIP
             self.logger().info("Tick Count: {}.".format(self._ta.tick_count))
+
+            current_mid_price = self._market_info.get_mid_price()
+
+            if self._ta.tick_count_is_zero:
+                self._ta.open_current_candle(current_mid_price, self._current_timestamp)
+                self.logger().info(f"candle open now at: {self._ta.current_candle.open} at {self._ta.current_candle.open_dt}")
+
+            self._ta.increment_tick_count()
+
+            if self._ta.candle_not_done:
+                if self._ta.current_candle is not None:
+                    self._ta.update_current_candle(current_mid_price)
+                    self.logger().info("Current Candle:" 
+                                                        + f"\n O {self._ta.current_candle.open}"
+                                                        + f"\n H {self._ta.current_candle.high}"
+                                                        + f"\n L {self._ta.current_candle.low}"
+                                                        + f"\n C {self._ta.current_candle.close}")
             
-            # S: If no positions exists, make new one WIP: HERE WE NEED TO SAY "IF BUY/SELL SIGNAL, CREATE BUY/SELL PROPORSAL"
+            if self._ta.resolution_done:
+                self._ta.close_current_candle(current_mid_price)
+
+                self.logger().info(f"candle closed now at: {self._ta.current_candle.close}")
+                
+                self._ta.move_current_candle()
+                self.logger().info(f"Number of Candles:  {len(self._ta.candles)}")
+                self._ta.reset_tick_count()
+            
+            # S: If no positions exists, make new one WIP: HERE WE NEED TO SAY "IF BUY/SELL SIGNAL, CREATE BUY/SELL PROPOSAL"
             if len(session_positions) == 0:
                 self._exit_orders = []  # Empty list of exit order at this point to reduce size
                 proposal = None
@@ -607,7 +634,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
         finally:
             self._last_timestamp = timestamp
             # S: Temporary tick counting for finding the right infrastructure logic
-            self._ta.increment_tick_count()
+            # self._ta.increment_tick_count()
             
 
     cdef c_manage_positions(self, list session_positions):
@@ -952,76 +979,16 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
             f"{limit_order_record.price} {limit_order_record.quote_currency} is filled."
         )
 
-    cdef bint c_is_within_tolerance(self, list current_prices, list proposal_prices):
-        if len(current_prices) != len(proposal_prices):
-            return False
-        current_prices = sorted(current_prices)
-        proposal_prices = sorted(proposal_prices)
-        for current, proposal in zip(current_prices, proposal_prices):
-            # if spread diff is more than the tolerance or order quantities are different, return false.
-            if abs(proposal - current)/current > self._order_refresh_tolerance_pct:
-                return False
-        return True
-
-    # Cancel active non hanging orders
-    # Return value: whether order cancellation is deferred.
-    # cdef c_cancel_active_orders(self, object proposal):
-    #     if self._cancel_timestamp > self._current_timestamp:
-    #         return
-
-    #     cdef:
-    #         list active_orders = self.active_non_hanging_orders
-    #         list active_buy_prices = []
-    #         list active_sells = []
-    #         bint to_defer_canceling = False
-    #     if len(active_orders) == 0:
-    #         return
-    #     if proposal is not None and self._order_refresh_tolerance_pct >= 0:
-
-    #         active_buy_prices = [Decimal(str(o.price)) for o in active_orders if o.is_buy]
-    #         active_sell_prices = [Decimal(str(o.price)) for o in active_orders if not o.is_buy]
-    #         proposal_buys = [buy.price for buy in proposal.buys]
-    #         proposal_sells = [sell.price for sell in proposal.sells]
-    #         if self.c_is_within_tolerance(active_buy_prices, proposal_buys) and \
-    #                 self.c_is_within_tolerance(active_sell_prices, proposal_sells):
-    #             to_defer_canceling = True
-
-    #     if not to_defer_canceling:
-    #         for order in active_orders:
-    #             self.c_cancel_order(self._market_info, order.client_order_id)
-    #     else:
-    #         self.logger().info(f"Not cancelling active orders since difference between new order prices "
-    #                            f"and current order prices is within "
-    #                            f"{self._order_refresh_tolerance_pct:.2%} order_refresh_tolerance_pct")
-    #         self.set_timers()
-
-    # cdef c_cancel_hanging_orders(self):
-    #     cdef:
-    #         object price = self.get_price()
-    #         list active_orders = self.active_orders
-    #         list orders
-    #         LimitOrder order
-    #     for h_order_id in self._hanging_order_ids:
-    #         orders = [o for o in active_orders if o.client_order_id == h_order_id]
-    #         if orders and price > 0:
-    #             order = orders[0]
-    #             if abs(order.price - price)/price >= self._hanging_orders_cancel_pct:
-    #                 self.c_cancel_order(self._market_info, order.client_order_id)
-
-    # Cancel Non-Hanging, Active Orders if Spreads are below minimum_spread
-    # cdef c_cancel_orders_below_min_spread(self):
-    #     cdef:
-    #         list active_orders = self.market_info_to_active_orders.get(self._market_info, [])
-    #         object price = self.get_price()
-    #     active_orders = [order for order in active_orders
-    #                      if order.client_order_id not in self._hanging_order_ids]
-    #     for order in active_orders:
-    #         negation = -1 if order.is_buy else 1
-    #         if (negation * (order.price - price) / price) < self._minimum_spread:
-    #             self.logger().info(f"Order is below minimum spread ({self._minimum_spread})."
-    #                                f" Cancelling Order: ({'Buy' if order.is_buy else 'Sell'}) "
-    #                                f"ID - {order.client_order_id}")
-    #             self.c_cancel_order(self._market_info, order.client_order_id)
+    # cdef bint c_is_within_tolerance(self, list current_prices, list proposal_prices):
+    #     if len(current_prices) != len(proposal_prices):
+    #         return False
+    #     current_prices = sorted(current_prices)
+    #     proposal_prices = sorted(proposal_prices)
+    #     for current, proposal in zip(current_prices, proposal_prices):
+    #         # if spread diff is more than the tolerance or order quantities are different, return false.
+    #         if abs(proposal - current)/current > self._order_refresh_tolerance_pct:
+    #             return False
+    #     return True
 
     # S: We don't need this in the future
     cdef bint c_to_create_orders(self, object proposal):
@@ -1061,7 +1028,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                         self._market_info,
                         buy.size,
                         order_type=order_type,
-                        price=buy.price, # S: Debug: Try to set the current bid-price here to prevent cancellation
+                        price=buy.price, 
                         expiration_seconds=expiration_seconds,
                         position_action=position_action
                     )
@@ -1092,7 +1059,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                         self._market_info,
                         buy.size,
                         order_type=order_type,
-                        price=buy.price, # S: Debug: Try to set the current bid-price here to prevent cancellation
+                        price=buy.price, 
                         expiration_seconds=expiration_seconds,
                         position_action=position_action
                     )
