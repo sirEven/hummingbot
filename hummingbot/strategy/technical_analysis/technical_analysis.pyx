@@ -575,34 +575,15 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                     self.logger().warning(f"WARNING: Some markets are not connected or are down at the moment. Market "
                                           f"making may be dangerous when markets or networks are unstable.")
 
-            # S: Here we start with Candle infrastructure TODO: WIP
-            self.logger().info("Tick Count: {}.".format(self._ta.tick_count))
+            # S: Capture the current tick count into a local variable to use during this tick
+            current_tick_count = self._ta.tick_count
+
+            self._ta.tick_alert(self.logger(), current_tick_count)
 
             current_mid_price = self._market_info.get_mid_price()
-
-            if self._ta.tick_count_is_zero:
-                self._ta.open_current_candle(current_mid_price, self._current_timestamp)
-                self.logger().info(f"candle open now at: {self._ta.current_candle.open} at {self._ta.current_candle.open_dt}")
             
-            self._ta.increment_tick_count()
-
-            if self._ta.candle_not_done:
-                if self._ta.current_candle is not None:
-                    self._ta.update_current_candle(current_mid_price)
-                    self.logger().info("Current Candle:" 
-                                                        + f"\n O {self._ta.current_candle.open}"
-                                                        + f"\n H {self._ta.current_candle.high}"
-                                                        + f"\n L {self._ta.current_candle.low}"
-                                                        + f"\n C {self._ta.current_candle.close}")
-            
-            if self._ta.resolution_done:
-                self._ta.close_current_candle(current_mid_price)
-
-                self.logger().info(f"candle closed now at: {self._ta.current_candle.close}")
-                
-                self._ta.move_current_candle()
-                self.logger().info(f"Number of Candles:  {len(self._ta.candles)}")
-                self._ta.reset_tick_count()
+            # S: Here we start candle-infrastructure TODO: WIP
+            self._ta.track_candle(self.logger(), current_mid_price, self._current_timestamp)
             
             # S: If no positions exists, make new one WIP: HERE WE NEED TO SAY "IF BUY/SELL SIGNAL, CREATE BUY/SELL PROPOSAL"
             if len(session_positions) == 0:

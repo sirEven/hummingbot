@@ -401,14 +401,14 @@ technical_analysis_config_map = {
                   prompt="What time resolution should your bot observe to find the pattern? In other words: What's the duration of each candle (in seconds)? >>> ",
                   type_str="int",
                   validator=lambda v: validate_int(v, min_value=5, inclusive=False),
-                  default=60,
+                  default=10,
                   prompt_on_new=True),
     "period":
         ConfigVar(key="period",
                   prompt="What period should the pattern be based on? In other words: How many candles should the processed MA include? >>> ",
                   type_str="int",
                   validator=lambda v: validate_int(v, min_value=2, inclusive=False),
-                  default=17,
+                  default=12,
                   prompt_on_new=True),
     "candle_part":
         ConfigVar(key="candle_part",

@@ -137,7 +137,7 @@ period: null
 # Which candle part to observe (open, high, low close)
 candle_part: null
 
-# How much of your available balance (in quote currency) should be traded (percentage or absolute value)
+# How much of your available balance (in quote currency) should be traded (percentage value)
 trade_volume: null
 
 

@@ -53,7 +53,7 @@ class TA():
         return self.__candles
     
     @property
-    def candle_not_done(self) -> bool:
+    def resolution_not_done(self) -> bool:
         return self.tick_count < self.time_resolution # & self.tick_count != 0 
     
     @property
@@ -61,7 +61,7 @@ class TA():
         return self.__tick_count == self.__time_resolution
 
     @property
-    def tick_count_is_zero(self) -> bool:
+    def current_tick_is_zero(self) -> bool:
         return self.__tick_count == 0
     
     def open_current_candle(self, current_price, current_timestamp):
@@ -84,7 +84,38 @@ class TA():
         self.__candles.append(self.__current_candle)
         if len(self.__candles) > self.__period:
             self.__candles.pop(0)
-    
+
+    def track_candle(self, logger, current_price, current_timestamp):
+        if self.current_tick_is_zero:
+                self.open_current_candle(current_price, current_timestamp)
+                logger.info(f"candle open now at: {self.current_candle.open} at {self.current_candle.open_dt}")
+
+        self.increment_tick_count()
+
+        if self.resolution_not_done:
+            if self.current_candle is not None:
+                self.update_current_candle(current_price)
+                logger.info("Current Candle:" 
+                                                + f"\n O {self.current_candle.open}"
+                                                + f"\n H {self.current_candle.high}"
+                                                + f"\n L {self.current_candle.low}"
+                                                + f"\n C {self.current_candle.close}")
+        
+        if self.resolution_done:
+            self.close_current_candle(current_price)
+
+            logger.info(f"candle closed now at: {self.current_candle.close}")
+            
+            self.move_current_candle()
+            logger.info(f"Number of Candles:  {len(self.candles)}")
+            self.reset_tick_count()
+
+    def tick_alert(self, logger, current_tick):
+        if current_tick < 0:
+            logger.info(f"Bot starts in {abs(current_tick)}.")
+        else:
+            logger.info("Current Tick: {}.".format(current_tick))
+
     def switch_signal(self):
         if self.__signal == "buy":
             self.__signal = "sell"
