@@ -607,14 +607,15 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                 
             # S: Else, manage those positions
             else:
-                if self._ta.tick_count == 15:
+                if len(self._ta.candles) == 10: # S: Temporary debugging condition to close currently open position again
                     self.c_manage_positions(session_positions)
-                    self._ta.reset_tick_count()
+                    # self._ta.reset_tick_count() -> moved into track_candle()
+                    self._ta.remove_all_candles()
                     self._ta.switch_signal()
 
         finally:
             self._last_timestamp = timestamp
-            # S: Temporary tick counting for finding the right infrastructure logic
+            # S: Temporary tick counting for finding the right infrastructure logic -> moved into track_candle()
             # self._ta.increment_tick_count()
             
 
@@ -659,10 +660,10 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
         quote_balance = market.c_get_available_balance(self.quote_asset)
         price = market.get_price(self.trading_pair, True) # S: Correct way to set bid price (works and results in filled order aka an open position)
         
-        # S: Calculate "user set %" of available quote balance
+        # S: TODO: Calculate "user set %" of available quote balance - which works as well, but often we get cancelled orders (which fill partially 0.o), which we need to handle
         quote_amount = Decimal((quote_balance * self._ta.trade_volume)/100)
         trade_amount = Decimal(quote_amount/price)
-        size = trade_amount # self._order_amount  
+        size = trade_amount # self._order_amount <- S: This is the old way of setting amount (fixed amount)
         size = market.c_quantize_order_amount(self.trading_pair, size)
         if size > 0:
             buys.append(PriceSize(price, size))
@@ -678,10 +679,10 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
         quote_balance = market.c_get_available_balance(self.quote_asset)
         price = market.get_price(self.trading_pair, False) # S: Correct way to set ask price (works and results in filled order aka an open position)
         
-        # S: Calculate "user set %" of available quote balance
+        # S: TODO: Calculate "user set %" of available quote balance - which works as well, but often we get cancelled orders (which fill partially 0.o), which we need to handle
         quote_amount = Decimal((quote_balance * self._ta.trade_volume)/100)
         trade_amount = Decimal(quote_amount/price)
-        size = trade_amount # self._order_amount
+        size = trade_amount # self._order_amount <- S: This is the old way of setting amount (fixed amount)
         size = market.c_quantize_order_amount(self.trading_pair, size)
         if size > 0:
             sells.append(PriceSize(price, size))

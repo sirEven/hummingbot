@@ -11,8 +11,8 @@ class TA():
         self.__candle_part = candle_part
         self.__trade_volume = trade_volume
        
-        self.__signal = "hold"
-        self.__tick_count = -5 # S: we give the bot some time to spin up everything
+        self.__signal = "buy" # S: set to "buy" to test bot-exchange interactions with live traidng (Attention, this isn't paper trading)
+        self.__tick_count = -5 # S: we give hummingbot some time to spin up everything
         self.__current_candle = None
         self.__candles = []
 
@@ -95,11 +95,11 @@ class TA():
         if self.resolution_not_done:
             if self.current_candle is not None:
                 self.update_current_candle(current_price)
-                logger.info("Current Candle:" 
-                                                + f"\n O {self.current_candle.open}"
-                                                + f"\n H {self.current_candle.high}"
-                                                + f"\n L {self.current_candle.low}"
-                                                + f"\n C {self.current_candle.close}")
+                # logger.info("Current Candle:" 
+                #                                 + f"\n O {self.current_candle.open}"
+                #                                 + f"\n H {self.current_candle.high}"
+                #                                 + f"\n L {self.current_candle.low}"
+                #                                 + f"\n C {self.current_candle.close}")
         
         if self.resolution_done:
             self.close_current_candle(current_price)
@@ -110,11 +110,16 @@ class TA():
             logger.info(f"Number of Candles:  {len(self.candles)}")
             self.reset_tick_count()
 
+# funcs for debugging
     def tick_alert(self, logger, current_tick):
         if current_tick < 0:
             logger.info(f"Bot starts in {abs(current_tick)}.")
         else:
-            logger.info("Current Tick: {}.".format(current_tick))
+            # logger.info("Current Tick: {}.".format(current_tick))
+            pass
+
+    def remove_all_candles(self):
+        self.__candles = []
 
     def switch_signal(self):
         if self.__signal == "buy":

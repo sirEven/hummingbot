@@ -2,6 +2,11 @@
 from enum import Enum
 
 # S: TODO: FIND A GOOD WAY TO HANDLE DIFFERENT TA_PATTERNS
+# S: TODO: Next step is to implement hullMA as first Ppattern. Then find an architecture to 
+    # a) extend the patterns by further technical analysis algorithms
+    # b) enable a certain boolean combination of multiple technical analysis patterns 
+        # e.g.: - "Only do hullMA signal trades when SMA200 is below current price"
+        #       - "Only do hullMA signal trades when price is outside of Bollinger Bands"
 
 class Pattern(Enum):
     hullMA = 1
