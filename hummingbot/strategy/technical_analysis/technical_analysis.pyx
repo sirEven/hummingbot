@@ -575,7 +575,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                     self.logger().warning(f"WARNING: Some markets are not connected or are down at the moment. Market "
                                           f"making may be dangerous when markets or networks are unstable.")
 
-            # S: Capture the current tick count into a local variable to use during this tick
+            # S: Capture the current tick count into a local variable to use during this tick as well as current mid_price
             current_tick_count = self._ta.tick_count
 
             self._ta.tick_alert(self.logger(), current_tick_count)
