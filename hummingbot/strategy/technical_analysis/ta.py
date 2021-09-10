@@ -4,14 +4,11 @@ from .candle import Candle
 
 class TA():
 
-    def __init__(self, pattern, time_resolution, period, candle_part, trade_volume):
-        self.__pattern = pattern
+    def __init__(self, time_resolution: int, period: int, trade_volume: int):
         self.__time_resolution = time_resolution
         self.__period = period
-        self.__candle_part = candle_part
         self.__trade_volume = trade_volume
        
-        self.__signal = "buy" # S: set to "buy" to test bot-exchange interactions with live traidng (Attention, this isn't paper trading)
         self.__tick_count = -5 # S: we give hummingbot some time to spin up everything
         self.__current_candle = None
         self.__candles = []
@@ -39,10 +36,6 @@ class TA():
     @property
     def tick_count(self):
         return self.__tick_count
-    
-    @property
-    def signal(self):
-        return self.__signal
     
     @property
     def current_candle(self):
@@ -120,9 +113,3 @@ class TA():
 
     def remove_all_candles(self):
         self.__candles = []
-
-    def switch_signal(self):
-        if self.__signal == "buy":
-            self.__signal = "sell"
-        elif self.__signal == "sell":
-            self.__signal = "buy"

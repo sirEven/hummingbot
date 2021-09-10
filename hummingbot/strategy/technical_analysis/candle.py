@@ -1,5 +1,13 @@
 #!/usr/bin/env python
 
+from enum import Enum
+
+class CandlePart(Enum):
+    open = 1
+    high = 2
+    low = 3
+    close = 4
+
 class Candle():
 
     def __init__(self, resolution, current_price, current_timestamp):

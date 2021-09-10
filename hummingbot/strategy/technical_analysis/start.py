@@ -15,6 +15,7 @@ from hummingbot.connector.exchange_base import ExchangeBase
 from decimal import Decimal
 
 from .ta import TA
+from .pattern_detection import PatternDetection
 
 
 def start(self):
@@ -84,7 +85,8 @@ def start(self):
         strategy_logging_options = TechnicalAnalysisStrategy.OPTION_LOG_ALL
 
         self.strategy = TechnicalAnalysisStrategy(
-            ta = TA(ta_pattern, time_resolution, period, candle_part, trade_volume),
+            ta = TA(time_resolution, period, trade_volume),
+            pattern_detection = PatternDetection(ta_pattern, candle_part),
             market_info=MarketTradingPairTuple(*maker_data),
             # leverage=leverage,
             # position_mode=position_mode,
