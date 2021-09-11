@@ -69,7 +69,6 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
 
     def __init__(self,
                  ta: TA,
-                 pattern_detection: PatternDetection,
                  market_info: MarketTradingPairTuple,
                 #  position_mode: str,
                 #  bid_spread: Decimal,
@@ -113,7 +112,6 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
 
         super().__init__()
         self._ta = ta
-        self._pattern_detection = pattern_detection
         self._sb_order_tracker = PerpetualMarketMakingOrderTracker()
         self._market_info = market_info
         self._leverage = leverage
@@ -584,17 +582,11 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
 
             self._ta.tick_alert(self.logger(), current_tick_count)
 
-            # S: Here we run candle-infrastructure TODO: WIP
+            # S: Here we run candle-infrastructure and pattern detection TODO: REMOVE logger()
             self._ta.track_candle(self.logger(), current_mid_price, self._current_timestamp)
 
-            # S: here we start pattern detection
-            self._pattern_detechtion.run_pattern_detection(self._ta.candles)
-
-            # S: Placeholder - here we check for the currently set signal and perform trades accordingly
-            self.logger().info(f"Current Signal:  {self._pattern_detection.current_signal}")
-
             # S: If no positions exists, make new one WIP: HERE WE NEED TO SAY "IF BUY/SELL SIGNAL, CREATE BUY/SELL PROPOSAL"
-            if self._pattern_detechtion.current_signal == Signal.buy.name:
+            if self._ta.pattern_detection.current_signal == Signal.buy.name:
                 if len(session_positions) == 0:
                     self._exit_orders = []  # Empty list of exit order at this point to reduce size
                     proposal = None
@@ -602,9 +594,9 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                     # asset_mid_price = self.c_set_mid_price(market_info)
                     if self._create_timestamp <= self._current_timestamp:
                         # 1. Create base order proposals
-                        if self._ta.signal == Signal.buy:
+                        if self._ta.pattern_detection.current_signal == Signal.buy:
                             proposal = self.c_create_base_proposal_buy()
-                        elif self._ta.signal == Signal.sell:
+                        elif self._ta.pattern_detection.current_signal == Signal.sell:
                             proposal = self.c_create_base_proposal_sell()
 
                     if self.c_to_create_orders(proposal):
@@ -619,7 +611,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                 if len(self._ta.candles) == 10: # S: Temporary debugging condition to close currently open position again
                     self.c_manage_positions(session_positions)
                     # self._ta.reset_tick_count() -> moved into track_candle()
-                    self._ta.remove_all_candles()
+                    # self._ta.remove_all_candles()
 
         finally:
             self._last_timestamp = timestamp

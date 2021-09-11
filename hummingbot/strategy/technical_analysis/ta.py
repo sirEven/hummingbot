@@ -1,10 +1,12 @@
 #!/usr/bin/env python
 
-from .candle import Candle
-
+from .pattern_detection import PatternDetection, Pattern
+from .candle import Candle, CandlePart
+# TODO: refactor patterndetection into here
 class TA():
 
-    def __init__(self, time_resolution: int, period: int, trade_volume: int):
+    def __init__(self, pattern: Pattern, time_resolution: int, period: int, candle_part: CandlePart, trade_volume: int):
+        self.__pattern_detection = PatternDetection(pattern, candle_part)
         self.__time_resolution = time_resolution
         self.__period = period
         self.__trade_volume = trade_volume
@@ -13,10 +15,12 @@ class TA():
         self.__current_candle = None
         self.__candles = []
 
-    @property
-    def pattern(self):
-        return self.__pattern
+        self.__logger = None # S: Debugging, plz remove later
     
+    @property
+    def pattern_detection(self):
+        return self.__pattern_detection
+
     @property
     def time_resolution(self):
         return self.__time_resolution
@@ -24,10 +28,6 @@ class TA():
     @property
     def period(self):
         return self.__period
-
-    @property
-    def candle_part(self):
-        return self.__candle_part
     
     @property
     def trade_volume(self):
@@ -57,6 +57,10 @@ class TA():
     def current_tick_is_zero(self) -> bool:
         return self.__tick_count == 0
     
+    @property
+    def candles_shifted(self) -> bool:
+        return self.__candles_shifted
+    
     def open_current_candle(self, current_price, current_timestamp):
         self.__current_candle = Candle(self.time_resolution, current_price, current_timestamp)
     
@@ -77,30 +81,29 @@ class TA():
         self.__candles.append(self.__current_candle)
         if len(self.__candles) > self.__period:
             self.__candles.pop(0)
+        if len(self.__candles) == self.__period:
+            self.__pattern_detection.run_pattern_detection(self.__candles, self.__logger)
 
     def track_candle(self, logger, current_price, current_timestamp):
+        self.__logger = logger
         if self.current_tick_is_zero:
                 self.open_current_candle(current_price, current_timestamp)
-                logger.info(f"candle open now at: {self.current_candle.open} at {self.current_candle.open_dt}")
+                # logger.info(f"candle open now at: {self.current_candle.open} at {self.current_candle.timestamp_open}")
 
         self.increment_tick_count()
 
         if self.resolution_not_done:
             if self.current_candle is not None:
                 self.update_current_candle(current_price)
-                # logger.info("Current Candle:" 
-                #                                 + f"\n O {self.current_candle.open}"
-                #                                 + f"\n H {self.current_candle.high}"
-                #                                 + f"\n L {self.current_candle.low}"
-                #                                 + f"\n C {self.current_candle.close}")
         
         if self.resolution_done:
             self.close_current_candle(current_price)
 
-            logger.info(f"candle closed now at: {self.current_candle.close}")
+            # logger.info(f"candle closed now at: {self.current_candle.close}")
             
             self.move_current_candle()
             logger.info(f"Number of Candles:  {len(self.candles)}")
+
             self.reset_tick_count()
 
 # funcs for debugging

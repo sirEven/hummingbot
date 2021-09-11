@@ -1,4 +1,5 @@
 from typing import Optional, List
+from decimal import Decimal
 
 def weighted_ma(series: List[float], period: Optional[int] = None) -> float:
     if not period:
@@ -12,7 +13,7 @@ def weighted_ma(series: List[float], period: Optional[int] = None) -> float:
     for index in range(period + period_offset - 1, period_offset - 1, -1):
         weight = index - period_offset + 1
         wma += series[index] * weight
-    return wma / ((period ** 2 + period) / 2)
+    return wma / Decimal((period ** 2 + period) / 2)
 
 def hull_ma(series: List[float], period: int) -> float:
     assert period > 0
