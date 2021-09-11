@@ -2,7 +2,7 @@
 
 from .pattern_detection import PatternDetection, Pattern
 from .candle import Candle, CandlePart
-# TODO: refactor patterndetection into here
+
 class TA():
 
     def __init__(self, pattern: Pattern, time_resolution: int, period: int, candle_part: CandlePart, trade_volume: int):
@@ -15,7 +15,7 @@ class TA():
         self.__current_candle = None
         self.__candles = []
 
-        self.__logger = None # S: Debugging, plz remove later
+        self.__logger = None # S: TODO: Debugging, plz remove later
     
     @property
     def pattern_detection(self):
@@ -81,10 +81,8 @@ class TA():
         self.__candles.append(self.__current_candle)
         if len(self.__candles) > self.__period:
             self.__candles.pop(0)
-        if len(self.__candles) == self.__period:
-            self.__pattern_detection.run_pattern_detection(self.__candles, self.__logger)
 
-    def track_candle(self, logger, current_price, current_timestamp):
+    def track_and_analyze_candles(self, logger, current_price, current_timestamp):
         self.__logger = logger
         if self.current_tick_is_zero:
                 self.open_current_candle(current_price, current_timestamp)
@@ -103,6 +101,9 @@ class TA():
             
             self.move_current_candle()
             logger.info(f"Number of Candles:  {len(self.candles)}")
+
+            if len(self.__candles) == self.__period:
+                self.__pattern_detection.run_pattern_detection(self.__candles, self.__logger)
 
             self.reset_tick_count()
 

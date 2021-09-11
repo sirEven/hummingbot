@@ -583,41 +583,34 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
             self._ta.tick_alert(self.logger(), current_tick_count)
 
             # S: Here we run candle-infrastructure and pattern detection TODO: REMOVE logger()
-            self._ta.track_candle(self.logger(), current_mid_price, self._current_timestamp)
+            self._ta.track_and_analyze_candles(self.logger(), current_mid_price, self._current_timestamp)
 
             # S: If no positions exists, make new one WIP: HERE WE NEED TO SAY "IF BUY/SELL SIGNAL, CREATE BUY/SELL PROPOSAL"
-            if self._ta.pattern_detection.current_signal == Signal.buy.name:
-                if len(session_positions) == 0:
-                    self._exit_orders = []  # Empty list of exit order at this point to reduce size
-                    proposal = None
-                    asset_mid_price = Decimal("0")
-                    # asset_mid_price = self.c_set_mid_price(market_info)
-                    if self._create_timestamp <= self._current_timestamp:
-                        # 1. Create base order proposals
-                        if self._ta.pattern_detection.current_signal == Signal.buy:
-                            proposal = self.c_create_base_proposal_buy()
-                        elif self._ta.pattern_detection.current_signal == Signal.sell:
-                            proposal = self.c_create_base_proposal_sell()
+            if len(session_positions) == 0:
+                self._exit_orders = []  # Empty list of exit order at this point to reduce size
+                proposal = None
+                asset_mid_price = Decimal("0")
+                # asset_mid_price = self.c_set_mid_price(market_info)
+                if self._create_timestamp <= self._current_timestamp:
+                    # 1. Create base order proposals
+                    if self._ta.pattern_detection.current_signal == Signal.buy: # S: TODO add .name to make work
+                        proposal = self.c_create_base_proposal_buy()
+                    elif self._ta.pattern_detection.current_signal == Signal.sell: # S: TODO add .name to make work
+                        proposal = self.c_create_base_proposal_sell()
 
-                    if self.c_to_create_orders(proposal):
-                        self.c_apply_budget_constraint(proposal)
+                if self.c_to_create_orders(proposal):
+                    self.c_apply_budget_constraint(proposal)
 
-                        self._close_order_type = OrderType.MARKET # S: Is this necessary?
-                        # S: Now we use our own execute_order_proposal func
-                        self.c_execute_order_proposal(proposal, PositionAction.OPEN)
+                    self._close_order_type = OrderType.MARKET # S: Is this necessary?
+                    # S: Now we use our own execute_order_proposal func
+                    self.c_execute_order_proposal(proposal, PositionAction.OPEN)
                 
             # S: Else, manage those positions
             else:
-                if len(self._ta.candles) == 10: # S: Temporary debugging condition to close currently open position again
-                    self.c_manage_positions(session_positions)
-                    # self._ta.reset_tick_count() -> moved into track_candle()
-                    # self._ta.remove_all_candles()
+                self.c_manage_positions(session_positions)
 
         finally:
             self._last_timestamp = timestamp
-            # S: Temporary tick counting for finding the right infrastructure logic -> moved into track_candle()
-            # self._ta.increment_tick_count()
-            
 
     cdef c_manage_positions(self, list session_positions):
         cdef:
@@ -634,12 +627,13 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
             
             self.logger().info(f"position amount is {position.amount}")
 
+            # S: TODO: implement condition to only close, if we currently have a sell signal or rather NO hold_long signal
             if position.amount > 0: # S: It is a long position -> we need to close it with a sell-order
                 size = market.c_quantize_order_amount(self.trading_pair, abs(position.amount))
                 price = market.get_price(self.trading_pair, False)
 
                 sells.append(PriceSize(price, size)) # S: CHECK AGAIN if we add to the correct side here!! // I think we do.
-
+            # S: TODO: implement condition to only close, if we currently have a buy signal or rather NO hold_short signal
             else: # S: It is a short position -> we need to close it with a buy-order 
                 size = market.c_quantize_order_amount(self.trading_pair, abs(position.amount))
                 price = market.get_price(self.trading_pair, True)
