@@ -41,9 +41,8 @@ from .asset_price_delegate cimport AssetPriceDelegate
 from .asset_price_delegate import AssetPriceDelegate
 from .order_book_asset_price_delegate cimport OrderBookAssetPriceDelegate
 
-from .ta import TA
-from .candle import Candle
-from .pattern_detection import PatternDetection, Signal
+from .ta.ta import TA
+from .ta.pattern_detection import PatternDetection, Signal
 
 NaN = float("nan")
 s_decimal_zero = Decimal(0)
@@ -585,7 +584,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
             # S: Here we run candle-infrastructure and pattern detection TODO: REMOVE logger()
             self._ta.track_and_analyze_candles(self.logger(), current_mid_price, self._current_timestamp)
 
-            # S: If no positions exists, make new one WIP: HERE WE NEED TO SAY "IF BUY/SELL SIGNAL, CREATE BUY/SELL PROPOSAL"
+            # S: If no positions exist, make new one WIP: HERE WE NEED TO SAY "IF BUY/SELL SIGNAL, CREATE BUY/SELL PROPOSAL"
             if len(session_positions) == 0:
                 self._exit_orders = []  # Empty list of exit order at this point to reduce size
                 proposal = None
@@ -593,10 +592,12 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                 # asset_mid_price = self.c_set_mid_price(market_info)
                 if self._create_timestamp <= self._current_timestamp:
                     # 1. Create base order proposals
-                    if self._ta.pattern_detection.current_signal == Signal.buy: # S: TODO add .name to make work
-                        proposal = self.c_create_base_proposal_buy()
-                    elif self._ta.pattern_detection.current_signal == Signal.sell: # S: TODO add .name to make work
-                        proposal = self.c_create_base_proposal_sell()
+                    if self._ta.pattern_detection.current_signal == Signal.buy: # S: TODO: uncomment 
+                        # proposal = self.c_create_base_proposal_buy()
+                        pass
+                    elif self._ta.pattern_detection.current_signal == Signal.sell: # S: TODO: uncomment
+                        # proposal = self.c_create_base_proposal_sell()
+                        pass
 
                 if self.c_to_create_orders(proposal):
                     self.c_apply_budget_constraint(proposal)
