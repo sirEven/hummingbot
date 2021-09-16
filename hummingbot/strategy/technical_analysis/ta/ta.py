@@ -18,8 +18,8 @@ class TA():
         self.__logger = None # S: TODO: Debugging, plz remove later
     
     @property
-    def pattern_detection(self):
-        return self.__pattern_detection
+    def signal(self):
+        return self.__pattern_detection.current_signal
 
     @property
     def time_resolution(self):
@@ -62,7 +62,7 @@ class TA():
         return self.__candles_shifted
     
     def open_current_candle(self, current_price, current_timestamp):
-        self.__current_candle = Candle(self.time_resolution, current_price, current_timestamp)
+        self.__current_candle = Candle(current_price, current_timestamp)
     
     def increment_tick_count(self):
         self.__tick_count += 1
@@ -86,7 +86,6 @@ class TA():
         self.__logger = logger
         if self.current_tick_is_zero:
                 self.open_current_candle(current_price, current_timestamp)
-                # logger.info(f"candle open now at: {self.current_candle.open} at {self.current_candle.timestamp_open}")
 
         self.increment_tick_count()
 
@@ -96,11 +95,9 @@ class TA():
         
         if self.resolution_done:
             self.close_current_candle(current_price)
-
-            # logger.info(f"candle closed now at: {self.current_candle.close}")
             
             self.move_current_candle()
-            logger.info(f"Number of Candles:  {len(self.candles)}")
+            logger.info(f"Number of Candles: {len(self.candles)}")
 
             if len(self.__candles) == self.__period:
                 self.__pattern_detection.run_pattern_detection(self.__candles, self.__logger)

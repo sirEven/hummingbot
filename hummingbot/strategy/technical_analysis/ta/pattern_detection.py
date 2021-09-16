@@ -7,16 +7,11 @@ from .candle import Candle, CandlePart
 from .mathematical_functions import hull_ma
 from .signal import Signal, set_signal
 
-# S: TODO: Derive new branch feature/pattern-detection
-# S: TODO: FIND A GOOD WAY TO HANDLE DIFFERENT TA_PATTERNS
-# S: TODO: Next step is to implement hullMA as first pattern. Then find an architecture to 
+# S: TODO: Find an architecture to 
     # a) extend the patterns by additional technical analysis algorithms
     # b) enable a certain boolean combination of multiple technical analysis patterns 
         # e.g.: - "Only do hullMA signal trades when SMA200 is below current price"
         #       - "Only do hullMA signal trades when price is outside of Bollinger Bands"
-
-# S: TODO: Move Signal enum an set_signal to own file
-# S: TODO: Maybe move calculate_hullMA_Signal out of here as well 
 
 class Pattern(Enum):
     hullMA = 1
@@ -28,18 +23,12 @@ class PatternDetection():
 
         self.__previous_pattern_value = None
         self.__current_signal: Signal = None 
-        self.__current_signal_has_changed = False
-    
+
     @property
     def current_signal(self):
         return self.__current_signal
-    
-    @property
-    def current_signal_has_changed(self):
-        return self.__current_signal_has_changed
 
     def run_pattern_detection(self, candles: List[Candle], logger):
-
         if self.__pattern == Pattern.hullMA.name:
             self.calculate_hullMA_signal(candles, self.__candle_part, logger)
     

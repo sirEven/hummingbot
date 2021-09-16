@@ -575,39 +575,34 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                     self.logger().warning(f"WARNING: Some markets are not connected or are down at the moment. Market "
                                           f"making may be dangerous when markets or networks are unstable.")
 
-            # S: Capture the current tick count into a local variable to use during this tick as well as current mid price
+            # S: Capture the current tick count into a local variable to use during this tick as well as current mid price and signal
             current_mid_price = self._market_info.get_mid_price()
             current_tick_count = self._ta.tick_count
+            self._ta.signal
 
             self._ta.tick_alert(self.logger(), current_tick_count)
 
             # S: Here we run candle-infrastructure and pattern detection TODO: REMOVE logger()
             self._ta.track_and_analyze_candles(self.logger(), current_mid_price, self._current_timestamp)
-
-            # S: If no positions exist, make new one WIP: HERE WE NEED TO SAY "IF BUY/SELL SIGNAL, CREATE BUY/SELL PROPOSAL"
-            if len(session_positions) == 0:
+            
+            if len(session_positions) == 0: # S: If no positions exist, make new one
                 self._exit_orders = []  # Empty list of exit order at this point to reduce size
                 proposal = None
                 asset_mid_price = Decimal("0")
-                # asset_mid_price = self.c_set_mid_price(market_info)
                 if self._create_timestamp <= self._current_timestamp:
-                    # 1. Create base order proposals
-                    if self._ta.pattern_detection.current_signal == Signal.buy: # S: TODO: uncomment 
-                        # proposal = self.c_create_base_proposal_buy()
-                        pass
-                    elif self._ta.pattern_detection.current_signal == Signal.sell: # S: TODO: uncomment
-                        # proposal = self.c_create_base_proposal_sell()
-                        pass
-
+                    if self._ta.signal == Signal.buy:
+                        self.logger().info("HERE WE WOULD OPEN A LONG POSITION")
+                        proposal = self.c_create_base_proposal_buy()
+                    elif self._ta.signal == Signal.sell:
+                        self.logger().info("HERE WE WOULD OPEN A SHORT POSITION")
+                        proposal = self.c_create_base_proposal_sell()
                 if self.c_to_create_orders(proposal):
                     self.c_apply_budget_constraint(proposal)
 
-                    self._close_order_type = OrderType.MARKET # S: Is this necessary?
-                    # S: Now we use our own execute_order_proposal func
-                    self.c_execute_order_proposal(proposal, PositionAction.OPEN)
-                
-            # S: Else, manage those positions
-            else:
+                    self._close_order_type = OrderType.MARKET # S: Is this necessary at this point?
+    
+                    self.c_execute_order_proposal(proposal, PositionAction.OPEN)    
+            else: # S: Else, manage those positions
                 self.c_manage_positions(session_positions)
 
         finally:
@@ -620,26 +615,22 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
             list buys = []
             list sells = []
 
-        # S: We don't want the positions to be managed in predefined anyway - we simply buy or sell according to signals.
-        # S: All the position management and proposal execution will be wrapped in Signal logic that updates every tick. 
-        # S: I think we need to create proposals in a different way here (with session_positions as input param)
-
         for position in session_positions:
             
-            self.logger().info(f"position amount is {position.amount}")
-
+            # self.logger().info(f"position amount is {position.amount}")
+            
             # S: TODO: implement condition to only close, if we currently have a sell signal or rather NO hold_long signal
             if position.amount > 0: # S: It is a long position -> we need to close it with a sell-order
-                size = market.c_quantize_order_amount(self.trading_pair, abs(position.amount))
-                price = market.get_price(self.trading_pair, False)
-
-                sells.append(PriceSize(price, size)) # S: CHECK AGAIN if we add to the correct side here!! // I think we do.
+                if self._ta.signal == Signal.sell: 
+                    size = market.c_quantize_order_amount(self.trading_pair, abs(position.amount))
+                    price = market.get_price(self.trading_pair, False)
+                    sells.append(PriceSize(price, size)) 
             # S: TODO: implement condition to only close, if we currently have a buy signal or rather NO hold_short signal
             else: # S: It is a short position -> we need to close it with a buy-order 
-                size = market.c_quantize_order_amount(self.trading_pair, abs(position.amount))
-                price = market.get_price(self.trading_pair, True)
-
-                buys.append(PriceSize(price, size))
+                if self._ta.signal == Signal.buy: 
+                    size = market.c_quantize_order_amount(self.trading_pair, abs(position.amount))
+                    price = market.get_price(self.trading_pair, True)
+                    buys.append(PriceSize(price, size))
 
         proposals = Proposal(buys, sells)
 
@@ -654,12 +645,14 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
         # S: get available quote balance
         quote_balance = market.c_get_available_balance(self.quote_asset)
         price = market.get_price(self.trading_pair, True) # S: Correct way to set bid price (works and results in filled order aka an open position)
-        
+        # S: TODO: Set price 1% higher (to prevent partial fills) - not a fan, there must be another way to get it as on dydx itself.
+        # price = price + ((price/100) * 1)
         # S: TODO: Calculate "user set %" of available quote balance - which works as well, but often we get cancelled orders (which fill partially 0.o), which we need to handle
         quote_amount = Decimal((quote_balance * self._ta.trade_volume)/100)
         trade_amount = Decimal(quote_amount/price)
         size = trade_amount # self._order_amount <- S: This is the old way of setting amount (fixed amount)
         size = market.c_quantize_order_amount(self.trading_pair, size)
+        self.logger().info(f"SIZE TO BUY: {size}")
         if size > 0:
             buys.append(PriceSize(price, size))
 
@@ -673,12 +666,14 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
         # S: get available quote balance
         quote_balance = market.c_get_available_balance(self.quote_asset)
         price = market.get_price(self.trading_pair, False) # S: Correct way to set ask price (works and results in filled order aka an open position)
-        
+        # S: Set price 1% lowder (to prevent partial fills)
+        # price = price - ((price/100) * 1)
         # S: TODO: Calculate "user set %" of available quote balance - which works as well, but often we get cancelled orders (which fill partially 0.o), which we need to handle
         quote_amount = Decimal((quote_balance * self._ta.trade_volume)/100)
         trade_amount = Decimal(quote_amount/price)
         size = trade_amount # self._order_amount <- S: This is the old way of setting amount (fixed amount)
         size = market.c_quantize_order_amount(self.trading_pair, size)
+        self.logger().info(f"SIZE TO SELL: {size} (needs to be bigger than 0 somehow")
         if size > 0:
             sells.append(PriceSize(price, size))
 
@@ -973,6 +968,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
             proposal is not None and \
             len(self.active_non_hanging_orders) == 0
 
+    # S: TODO: FOK
     cdef c_execute_order_proposal(self, object proposal, object position_action):
         cdef:
             double expiration_seconds = NaN
@@ -982,11 +978,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
 
         if len(proposal.buys) > 0: 
             if position_action == PositionAction.CLOSE:
-                # S: Find out how to close position
-                # S: Actually we need to close an open position by creating an opposite order  /done, works fine
-                # S: https://docs.hummingbot.io/strategies/perpetual-market-making/#creating-orders-to-close-a-position
-                
-                self.logger().info("Here we would close the SHORT position")
+                # S: Here we close an open SHORT position
 
                 if self._logging_options & self.OPTION_LOG_CREATE_ORDER:
                     price_quote_str = [f"{buy.size.normalize()} {self.base_asset}, "
@@ -1021,7 +1013,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
 
                     orders_created = True
 
-            else: # S: Open new Position
+            else: # S: Here we open a new LONG Position
                 if self._logging_options & self.OPTION_LOG_CREATE_ORDER:
                     price_quote_str = [f"{buy.size.normalize()} {self.base_asset}, "
                                     f"{buy.price.normalize()} {self.quote_asset}"
@@ -1049,9 +1041,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
 
         if len(proposal.sells) > 0:
             if position_action == PositionAction.CLOSE:
-                # S: Find out how to close position
-                # S: Actually we need to close an open position by creating an opposite order /done, works fine
-                # S: https://docs.hummingbot.io/strategies/perpetual-market-making/#creating-orders-to-close-a-position
+                # S: Here we close an open LONG position
 
                 self.logger().info("Here we would close the LONG position")
 
@@ -1085,7 +1075,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
 
                     orders_created = True 
 
-            else:
+            else: # S: Here we open a new SHORT Position
                 if self._logging_options & self.OPTION_LOG_CREATE_ORDER:
                     price_quote_str = [f"{sell.size.normalize()} {self.base_asset}, "
                                     f"{sell.price.normalize()} {self.quote_asset}"
