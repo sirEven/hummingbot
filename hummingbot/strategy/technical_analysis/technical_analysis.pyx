@@ -673,7 +673,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
         trade_amount = Decimal(quote_amount/price)
         size = trade_amount # self._order_amount <- S: This is the old way of setting amount (fixed amount)
         size = market.c_quantize_order_amount(self.trading_pair, size)
-        self.logger().info(f"SIZE TO SELL: {size} (needs to be bigger than 0 somehow")
+        self.logger().info(f"SIZE TO SELL: {size}")
         if size > 0:
             sells.append(PriceSize(price, size))
 
@@ -968,7 +968,6 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
             proposal is not None and \
             len(self.active_non_hanging_orders) == 0
 
-    # S: TODO: FOK
     cdef c_execute_order_proposal(self, object proposal, object position_action):
         cdef:
             double expiration_seconds = NaN

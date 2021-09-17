@@ -41,7 +41,7 @@ class DydxPerpetualClientWrapper:
         dydx_client_id = 10 * int("".join([n for n in clientId if n.isdigit()]))
         if side == 'SELL':
             dydx_client_id += 1
-        time_in_force = 'IOC' if order_type == 'MARKET' else 'GTT'
+        time_in_force = 'FOK' if order_type == 'MARKET' else 'GTT' # S: TODO: Attention, changed IOC to FOK
         trailing_percent = 0 if order_type == 'MARKET' else None
 
         f = self._loop.run_in_executor(None, partial(self.client.private.create_order,
