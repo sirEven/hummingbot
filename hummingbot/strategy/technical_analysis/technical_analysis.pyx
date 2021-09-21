@@ -72,7 +72,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                 #  position_mode: str,
                 #  bid_spread: Decimal,
                 #  ask_spread: Decimal,
-                 order_amount: Decimal,
+                order_amount: Decimal,
                 #  position_management: str,
                 #  long_profit_taking_spread: Decimal,
                 #  short_profit_taking_spread: Decimal,
@@ -85,7 +85,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                 #  order_level_amount: Decimal = s_decimal_zero,
                 #  order_refresh_time: float = 30.0,
                 #  order_refresh_tolerance_pct: Decimal = s_decimal_neg_one,
-                #  filled_order_delay: float = 60.0,
+                filled_order_delay: float = 10.0, # S: Attention, here we set fixed delay!
                 #  hanging_orders_enabled: bool = False,
                 #  hanging_orders_cancel_pct: Decimal = Decimal("0.1"),
                 #  order_optimization_enabled: bool = False,
@@ -133,7 +133,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
         # self._order_level_amount = order_level_amount
         # self._order_refresh_time = order_refresh_time
         # self._order_refresh_tolerance_pct = order_refresh_tolerance_pct
-        # self._filled_order_delay = filled_order_delay
+        self._filled_order_delay = filled_order_delay
         # self._hanging_orders_enabled = hanging_orders_enabled
         # self._hanging_orders_cancel_pct = hanging_orders_cancel_pct
         # self._order_optimization_enabled = order_optimization_enabled
@@ -553,7 +553,8 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
         StrategyBase.c_tick(self, timestamp)
         cdef:
             ExchangeBase market = self._market_info.market
-            list session_positions = [s for s in self.active_positions.values() if s.trading_pair == self.trading_pair]
+            # S: TODO: BUG: active_positions is not correctly returning. There seems to be a bug -> some kind of ghost position with 0.0 amount which freezes the manage_position func
+            list session_positions = [s for s in self.active_positions.values() if s.trading_pair == self.trading_pair and s.amount != 0]          
             int64_t current_tick = <int64_t>(timestamp // self._status_report_interval)
             int64_t last_tick = <int64_t>(self._last_timestamp // self._status_report_interval)
             bint should_report_warnings = ((current_tick > last_tick) and
@@ -575,11 +576,14 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                     self.logger().warning(f"WARNING: Some markets are not connected or are down at the moment. Market "
                                           f"making may be dangerous when markets or networks are unstable.")
 
+            # S: TODO: print quote balance that is one of our main porblems rn!!
+            # balance = market.c_get_available_balance(self.quote_asset)
+            # self.logger().info(f"QUOTE BALANCE: {balance}")
+
             # S: Capture the current tick count into a local variable to use during this tick as well as current mid price and signal
             current_mid_price = self._market_info.get_mid_price()
             current_tick_count = self._ta.tick_count
-            self._ta.signal
-
+            current_signal = self._ta.signal
             self._ta.tick_alert(self.logger(), current_tick_count)
 
             # S: Here we run candle-infrastructure and pattern detection TODO: REMOVE logger()
@@ -590,10 +594,10 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                 proposal = None
                 asset_mid_price = Decimal("0")
                 if self._create_timestamp <= self._current_timestamp:
-                    if self._ta.signal == Signal.buy:
+                    if current_signal == Signal.buy or current_signal == Signal.hold_long:
                         self.logger().info("HERE WE WOULD OPEN A LONG POSITION")
                         proposal = self.c_create_base_proposal_buy()
-                    elif self._ta.signal == Signal.sell:
+                    elif current_signal == Signal.sell or current_signal == Signal.hold_short:
                         self.logger().info("HERE WE WOULD OPEN A SHORT POSITION")
                         proposal = self.c_create_base_proposal_sell()
                 if self.c_to_create_orders(proposal):
@@ -601,8 +605,10 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
 
                     self._close_order_type = OrderType.MARKET # S: Is this necessary at this point?
     
-                    self.c_execute_order_proposal(proposal, PositionAction.OPEN)    
+                    self.c_execute_order_proposal(proposal, PositionAction.OPEN)
+
             else: # S: Else, manage those positions
+
                 self.c_manage_positions(session_positions)
 
         finally:
@@ -619,39 +625,46 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
             
             # self.logger().info(f"position amount is {position.amount}")
             
-            # S: TODO: implement condition to only close, if we currently have a sell signal or rather NO hold_long signal
+            # S: Condition to only close, if we currently have a sell signal or rather NO hold_long signal
             if position.amount > 0: # S: It is a long position -> we need to close it with a sell-order
                 if self._ta.signal == Signal.sell: 
                     size = market.c_quantize_order_amount(self.trading_pair, abs(position.amount))
+                    self.logger().info(f"POSITION AMOUNT in manage_positions: {position.amount}")
                     price = market.get_price(self.trading_pair, False)
                     sells.append(PriceSize(price, size)) 
-            # S: TODO: implement condition to only close, if we currently have a buy signal or rather NO hold_short signal
+            # S: Condition to only close, if we currently have a buy signal or rather NO hold_short signal
             else: # S: It is a short position -> we need to close it with a buy-order 
-                if self._ta.signal == Signal.buy: 
-                    size = market.c_quantize_order_amount(self.trading_pair, abs(position.amount))
-                    price = market.get_price(self.trading_pair, True)
-                    buys.append(PriceSize(price, size))
+                if position.amount != 0: 
+                    if self._ta.signal == Signal.buy: 
+                        size = market.c_quantize_order_amount(self.trading_pair, abs(position.amount))
+                        self.logger().info(f"POSITION AMOUNT in manage_positions: {position.amount}")
+                        price = market.get_price(self.trading_pair, True)
+                        buys.append(PriceSize(price, size))
 
-        proposals = Proposal(buys, sells)
+        proposals = Proposal(buys, sells) 
 
         if proposals is not None:
             self.c_execute_order_proposal(proposals, PositionAction.CLOSE)
 
-    cdef object c_create_base_proposal_buy(self):
+    cdef object c_create_base_proposal_buy(self): # S: BUG: Why do we have the wrong quote balance when opening long and short?
         cdef:
             ExchangeBase market = self._market_info.market
+            # object quote_balance = market.c_get_available_balance(self.quote_asset) # S: TODO: WIP HERE DEBUGGING
+            object quote_balance = self.c_get_adjusted_available_balance(self.active_orders)[1]
             list buys = []
             list sells = []
-        # S: get available quote balance
-        quote_balance = market.c_get_available_balance(self.quote_asset)
+
         price = market.get_price(self.trading_pair, True) # S: Correct way to set bid price (works and results in filled order aka an open position)
-        # S: TODO: Set price 1% higher (to prevent partial fills) - not a fan, there must be another way to get it as on dydx itself.
-        # price = price + ((price/100) * 1)
-        # S: TODO: Calculate "user set %" of available quote balance - which works as well, but often we get cancelled orders (which fill partially 0.o), which we need to handle
-        quote_amount = Decimal((quote_balance * self._ta.trade_volume)/100)
+        
+        # S: calculate amount based on user set percentage        
+        user_set_volume = self._ta.trade_volume/100
+        quote_amount = Decimal(quote_balance * user_set_volume)
         trade_amount = Decimal(quote_amount/price)
         size = trade_amount # self._order_amount <- S: This is the old way of setting amount (fixed amount)
         size = market.c_quantize_order_amount(self.trading_pair, size)
+        self.logger().info(f"trade_volume: {self._ta.trade_volume}")
+        self.logger().info(f"quote_balance: {quote_balance}")
+        self.logger().info(f"quote_amount (quote_balance * trade_volume)/100: {quote_amount}")
         self.logger().info(f"SIZE TO BUY: {size}")
         if size > 0:
             buys.append(PriceSize(price, size))
@@ -661,18 +674,22 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
     cdef object c_create_base_proposal_sell(self):
         cdef:
             ExchangeBase market = self._market_info.market
+            # object quote_balance = market.c_get_available_balance(self.quote_asset) # S: TODO: WIP HERE DEBUGGING
+            object quote_balance = self.c_get_adjusted_available_balance(self.active_orders)[1]
             list buys = []
             list sells = []
-        # S: get available quote balance
-        quote_balance = market.c_get_available_balance(self.quote_asset)
+
         price = market.get_price(self.trading_pair, False) # S: Correct way to set ask price (works and results in filled order aka an open position)
-        # S: Set price 1% lowder (to prevent partial fills)
-        # price = price - ((price/100) * 1)
-        # S: TODO: Calculate "user set %" of available quote balance - which works as well, but often we get cancelled orders (which fill partially 0.o), which we need to handle
-        quote_amount = Decimal((quote_balance * self._ta.trade_volume)/100)
+       
+        # S: calculate amount based on user set percentage
+        user_set_volume = self._ta.trade_volume/100
+        quote_amount = Decimal(quote_balance * user_set_volume)
         trade_amount = Decimal(quote_amount/price)
         size = trade_amount # self._order_amount <- S: This is the old way of setting amount (fixed amount)
         size = market.c_quantize_order_amount(self.trading_pair, size)
+        self.logger().info(f"trade_volume: {self._ta.trade_volume}")
+        self.logger().info(f"quote_balance: {quote_balance}")
+        self.logger().info(f"quote_amount (quote_balance * trade_volume)/100: {quote_amount}")
         self.logger().info(f"SIZE TO SELL: {size}")
         if size > 0:
             sells.append(PriceSize(price, size))
@@ -686,14 +703,16 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
         """
         cdef:
             ExchangeBase market = self._market_info.market
-            object quote_balance = self._market_info.market.c_get_available_balance(self.quote_asset)
-
+            # object quote_balance = self._market_info.market.c_get_available_balance(self.quote_asset)
+            object quote_balance = market.c_get_available_balance(self.quote_asset)
+            object base_balance = market.c_get_available_balance(self.base_asset) # S: Attention, changed this
+        
         for order in orders:
             if order.is_buy:
                 quote_balance += order.quantity * order.price / self._leverage
+                self.logger().info(f"orderID: {order.id}, quote_balance: {quote_balance}")
             else:
                 base_balance += order.quantity
-
         return base_balance, quote_balance
 
     cdef c_apply_order_levels_modifiers(self, proposal):
@@ -886,7 +905,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                 return
 
         # delay order creation by filled_order_delay (in seconds)
-        self._create_timestamp = self._current_timestamp + self._filled_order_delay
+        self._create_timestamp = self._current_timestamp + self._filled_order_delay 
         self._cancel_timestamp = min(self._cancel_timestamp, self._create_timestamp)
 
         if self._hanging_orders_enabled:
@@ -990,7 +1009,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                 
                 for buy in proposal.buys:
                     
-                    market = self._market_info.market
+                    # market = self._market_info.market
 
                     bid_order_id = self.c_buy_with_specific_market(
                         self._market_info,
@@ -1000,11 +1019,6 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                         expiration_seconds=expiration_seconds,
                         position_action=position_action
                     )
-
-                    price = market.get_price(self.trading_pair, True)
-                    self.logger().info(
-                        f"PROPOSAL PRICE: {buy.price} vs. EXCHANGE PRICE {price}"
-                    )
                     
                     # S: TODO: Try out, if we even need this if block
                     if position_action == PositionAction.CLOSE:
@@ -1012,7 +1026,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
 
                     orders_created = True
 
-            else: # S: Here we open a new LONG Position
+            else: # S: Here we open a new LONG Position BUG: Why do we have the wron quote balance when opening long?
                 if self._logging_options & self.OPTION_LOG_CREATE_ORDER:
                     price_quote_str = [f"{buy.size.normalize()} {self.base_asset}, "
                                     f"{buy.price.normalize()} {self.quote_asset}"
@@ -1023,6 +1037,9 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                     )
                 
                 for buy in proposal.buys: 
+
+                    # market = self._market_info.market
+
                     bid_order_id = self.c_buy_with_specific_market(
                         self._market_info,
                         buy.size,
@@ -1054,7 +1071,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                     )
                 for sell in proposal.sells:
                     
-                    market = self._market_info.market
+                    # market = self._market_info.market
 
                     ask_order_id = self.c_sell_with_specific_market(
                         self._market_info,
@@ -1064,10 +1081,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                         expiration_seconds=expiration_seconds,
                         position_action=position_action
                     )
-                    price = market.get_price(self.trading_pair, False)
-                    self.logger().info(
-                        f"PROPOSAL PRICE: {sell.price} vs. EXCHANGE PRICE {price}"
-                    )
+                   
                     # S: TODO: Try out, if we even need this if block
                     if position_action == PositionAction.CLOSE:
                         self._exit_orders.append(ask_order_id)
@@ -1095,7 +1109,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                     # S: TODO: Try out, if we even need this if block
                     if position_action == PositionAction.CLOSE:
                         self._exit_orders.append(ask_order_id)
-
+                        self.logger().inf(f"WHY did we get here? (in OPENING SHORT BLOCK) - actual action: {position_action}")
                     orders_created = True        
 
     cdef set_timers(self):

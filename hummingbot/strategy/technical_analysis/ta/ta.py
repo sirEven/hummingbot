@@ -18,6 +18,10 @@ class TA():
         self.__logger = None # S: TODO: Debugging, plz remove later
     
     @property
+    def pattern_detection(self):
+        return self.__pattern_detection
+    
+    @property
     def signal(self):
         return self.__pattern_detection.current_signal
 

@@ -400,15 +400,15 @@ technical_analysis_config_map = {
         ConfigVar(key="time_resolution",
                   prompt="What time resolution should your bot observe to find the pattern? In other words: What's the duration of each candle (in seconds)? >>> ",
                   type_str="int",
-                  validator=lambda v: validate_int(v, min_value=5, inclusive=True),
-                  default=10,
+                  validator=lambda v: validate_int(v, min_value=20, inclusive=True), # S: TODO: set min to 30 to have no race against tick
+                  default=20,
                   prompt_on_new=True),
     "period":
         ConfigVar(key="period",
                   prompt="What period should the pattern be based on? In other words: How many candles should the processed MA include? >>> ",
                   type_str="int",
                   validator=lambda v: validate_int(v, min_value=2, inclusive=False),
-                  default=12,
+                  default=6,
                   prompt_on_new=True),
     "candle_part":
         ConfigVar(key="candle_part",
@@ -420,7 +420,7 @@ technical_analysis_config_map = {
                   prompt_on_new=True),
     "trade_volume":
         ConfigVar(key="trade_volume",
-                  prompt="How much of your available base cuccency (e.g.: 20%) do you wish to be used per trade? >>> ",
+                  prompt="How much of your available base currency (e.g.: 20%) do you wish to be used per trade? >>> ",
                   type_str="decimal",
                   validator=lambda v: validate_decimal(v, 1, 100, inclusive=False),
                   default=Decimal("10"),

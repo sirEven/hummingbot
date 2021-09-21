@@ -63,6 +63,8 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
         object _ts_peak_ask_price
         list _exit_orders
     cdef c_manage_positions(self, list session_positions)
+    # cdef c_manage_long_position(self, list session_positions)
+    # cdef c_manage_short_position(self, list session_positions)
     # cdef c_profit_taking_feature(self, object mode, list active_positions)
     # cdef c_trailing_stop_feature(self, object mode, list active_positions)
     # cdef c_stop_loss_feature(self, object mode, list active_positions)
