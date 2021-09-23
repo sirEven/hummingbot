@@ -68,6 +68,8 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
 
     def __init__(self,
                  ta: TA,
+                 currently_processed_order_id: str,
+                 new_order_cooldown: bool,  
                  market_info: MarketTradingPairTuple,
                 #  position_mode: str,
                 #  bid_spread: Decimal,
@@ -85,7 +87,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                 #  order_level_amount: Decimal = s_decimal_zero,
                 #  order_refresh_time: float = 30.0,
                 #  order_refresh_tolerance_pct: Decimal = s_decimal_neg_one,
-                filled_order_delay: float = 10.0, # S: Attention, here we set fixed delay!
+                filled_order_delay: float = 1.0, # S: Attention, here we set fixed delay!
                 #  hanging_orders_enabled: bool = False,
                 #  hanging_orders_cancel_pct: Decimal = Decimal("0.1"),
                 #  order_optimization_enabled: bool = False,
@@ -111,6 +113,8 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
 
         super().__init__()
         self._ta = ta
+        self._currently_processed_order_id = currently_processed_order_id
+        self._new_order_cooldown = new_order_cooldown
         self._sb_order_tracker = PerpetualMarketMakingOrderTracker()
         self._market_info = market_info
         self._leverage = leverage
@@ -149,7 +153,6 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
         # self._ping_pong_warning_lines = []
         self._hb_app_notification = hb_app_notification
         # self._order_override = order_override
-
         self._cancel_timestamp = 0
         self._create_timestamp = 0
         self._all_markets_ready = False
@@ -576,10 +579,6 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                     self.logger().warning(f"WARNING: Some markets are not connected or are down at the moment. Market "
                                           f"making may be dangerous when markets or networks are unstable.")
 
-            # S: TODO: print quote balance that is one of our main porblems rn!!
-            # balance = market.c_get_available_balance(self.quote_asset)
-            # self.logger().info(f"QUOTE BALANCE: {balance}")
-
             # S: Capture the current tick count into a local variable to use during this tick as well as current mid price and signal
             current_mid_price = self._market_info.get_mid_price()
             current_tick_count = self._ta.tick_count
@@ -588,31 +587,41 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
 
             # S: Here we run candle-infrastructure and pattern detection TODO: REMOVE logger()
             self._ta.track_and_analyze_candles(self.logger(), current_mid_price, self._current_timestamp)
-            
-            if len(session_positions) == 0: # S: If no positions exist, make new one
-                self._exit_orders = []  # Empty list of exit order at this point to reduce size
-                proposal = None
-                asset_mid_price = Decimal("0")
-                if self._create_timestamp <= self._current_timestamp:
-                    if current_signal == Signal.buy or current_signal == Signal.hold_long:
-                        self.logger().info("HERE WE WOULD OPEN A LONG POSITION")
-                        proposal = self.c_create_base_proposal_buy()
-                    elif current_signal == Signal.sell or current_signal == Signal.hold_short:
-                        self.logger().info("HERE WE WOULD OPEN A SHORT POSITION")
-                        proposal = self.c_create_base_proposal_sell()
-                if self.c_to_create_orders(proposal):
-                    self.c_apply_budget_constraint(proposal)
 
-                    self._close_order_type = OrderType.MARKET # S: Is this necessary at this point?
-    
-                    self.c_execute_order_proposal(proposal, PositionAction.OPEN)
+            # S: Here we run trading logic derived and adapted from pmm strategy:    
+            self.c_perform_trades(session_positions, current_signal)
+
+        finally:
+            self._last_timestamp = timestamp
+
+    cdef c_perform_trades(self, session_positions, current_signal):
+        # S: Here we should check for a new_order_cooldown, which we set to true after every executed order proposal and set to false after every did_complete_order event with same ID
+        if self._new_order_cooldown == False:
+            if len(session_positions) == 0: # S: If no positions exist, make new one
+                    self._exit_orders = []  # Empty list of exit order at this point to reduce size
+                    proposal = None
+
+                    debug_text = ""
+
+                    if self._create_timestamp <= self._current_timestamp:
+                        if current_signal == Signal.buy or current_signal == Signal.hold_long:
+                            debug_text = "LONG PROPOSAL CREATED"
+                            proposal = self.c_create_base_proposal_buy()
+                        elif current_signal == Signal.sell or current_signal == Signal.hold_short:
+                            debug_text = "SHORT PROPOSAL CREATED"
+                            proposal = self.c_create_base_proposal_sell()
+                    
+                        if self.c_to_create_orders(proposal): # S: Delay happening here.
+
+                            self.logger().info(debug_text)
+
+                            self.c_apply_budget_constraint(proposal)
+                            self._close_order_type = OrderType.MARKET # S: Is this necessary at this point?
+                            self.c_execute_order_proposal(proposal, PositionAction.OPEN)
 
             else: # S: Else, manage those positions
 
                 self.c_manage_positions(session_positions)
-
-        finally:
-            self._last_timestamp = timestamp
 
     cdef c_manage_positions(self, list session_positions):
         cdef:
@@ -885,103 +894,59 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
         cdef:
             str order_id = order_completed_event.order_id
             limit_order_record = self._sb_order_tracker.c_get_limit_order(self._market_info, order_id)
-        if limit_order_record is None:
-            return
-        active_sell_ids = [x.client_order_id for x in self.active_orders if not x.is_buy]
 
-        if self._hanging_orders_enabled:
-            # If the filled order is a hanging order, do nothing
-            if order_id in self._hanging_order_ids:
-                self.log_with_clock(
-                    logging.INFO,
-                    f"({self.trading_pair}) Hanging maker buy order {order_id} "
-                    f"({limit_order_record.quantity} {limit_order_record.base_currency} @ "
-                    f"{limit_order_record.price} {limit_order_record.quote_currency}) has been completely filled."
-                )
-                self.notify_hb_app_with_timestamp(
-                    f"Hanging maker BUY order {limit_order_record.quantity} {limit_order_record.base_currency} @ "
-                    f"{limit_order_record.price} {limit_order_record.quote_currency} is filled."
-                )
-                return
-
-        # delay order creation by filled_order_delay (in seconds)
+        self.logger().info(f"CURRENTLY BEING PROCESSED ORDER IS: {self._currently_processed_order_id} - WE JUST DID COMPLETE BUY ORDER {order_id}")
+        
+        # S: Cooldown for new orders has passed, since this order is now finished - needs to happen in a did cancel call back as well...right?
+        if order_id == self._currently_processed_order_id:
+            self._new_order_cooldown = False
+        
+        # S: Delay such that we only submit Proposals with correct amount (querrying quote_balance too early results in wrong values)
         self._create_timestamp = self._current_timestamp + self._filled_order_delay 
         self._cancel_timestamp = min(self._cancel_timestamp, self._create_timestamp)
-
-        if self._hanging_orders_enabled:
-            for other_order_id in active_sell_ids:
-                self._hanging_order_ids.append(other_order_id)
-
-        self._filled_buys_balance += 1
-        self._last_own_trade_price = limit_order_record.price
-
-        self.log_with_clock(
-            logging.INFO,
-            f"({self.trading_pair}) Maker buy order {order_id} "
-            f"({limit_order_record.quantity} {limit_order_record.base_currency} @ "
-            f"{limit_order_record.price} {limit_order_record.quote_currency}) has been completely filled."
-        )
-        self.notify_hb_app_with_timestamp(
-            f"Maker BUY order {limit_order_record.quantity} {limit_order_record.base_currency} @ "
-            f"{limit_order_record.price} {limit_order_record.quote_currency} is filled."
-        )
 
     cdef c_did_complete_sell_order(self, object order_completed_event):
         cdef:
             str order_id = order_completed_event.order_id
             LimitOrder limit_order_record = self._sb_order_tracker.c_get_limit_order(self._market_info, order_id)
-        if limit_order_record is None:
-            return
-        active_buy_ids = [x.client_order_id for x in self.active_orders if x.is_buy]
-        if self._hanging_orders_enabled:
-            # If the filled order is a hanging order, do nothing
-            if order_id in self._hanging_order_ids:
-                self.log_with_clock(
-                    logging.INFO,
-                    f"({self.trading_pair}) Hanging maker sell order {order_id} "
-                    f"({limit_order_record.quantity} {limit_order_record.base_currency} @ "
-                    f"{limit_order_record.price} {limit_order_record.quote_currency}) has been completely filled."
-                )
-                self.notify_hb_app_with_timestamp(
-                    f"Hanging maker SELL order {limit_order_record.quantity} {limit_order_record.base_currency} @ "
-                    f"{limit_order_record.price} {limit_order_record.quote_currency} is filled."
-                )
-                return
 
-        # delay order creation by filled_order_delay (in seconds)
-        self._create_timestamp = self._current_timestamp + self._filled_order_delay
+        self.logger().info(f"CURRENTLY BEING PROCESSED ORDER IS: {self._currently_processed_order_id} - WE JUST DID COMPLETE SELL ORDER {order_id}")
+
+         # S: Cooldown for new orders has passed, since this order is now finished - needs to happen in a did cancel call back as well...right?
+        if order_id == self._currently_processed_order_id:
+            self._new_order_cooldown = False
+
+        # S: Delay such that we only submit Proposals with correct amount (querrying quote_balance too early results in wrong values)
+        self._create_timestamp = self._current_timestamp + self._filled_order_delay 
         self._cancel_timestamp = min(self._cancel_timestamp, self._create_timestamp)
+    
+    cdef c_did_fail_order(self, object order_failed_event):
+        cdef:
+            str order_id = order_failed_event.order_id
+            LimitOrder limit_order_record = self._sb_order_tracker.c_get_limit_order(self._market_info, order_id)
+        
+        # S: Cooldown for new orders has passed, since this order is now finished - needs to happen in a did cancel call back as well...right?
+        if order_id == self._currently_processed_order_id:
+            self._new_order_cooldown = False
+    
+    cdef c_did_cancel_order(self, object cancelled_event):
+        cdef:
+            str order_id = cancelled_event.order_id
+            LimitOrder limit_order_record = self._sb_order_tracker.c_get_limit_order(self._market_info, order_id)
+        
+        # S: Cooldown for new orders has passed, since this order is now finished - needs to happen in a did cancel call back as well...right?
+        if order_id == self._currently_processed_order_id:
+            self._new_order_cooldown = False
+    
+    cdef c_did_expire_order(self, object expired_event):
+        cdef:
+            str order_id = expired_event.order_id
+            LimitOrder limit_order_record = self._sb_order_tracker.c_get_limit_order(self._market_info, order_id)
+        
+        # S: Cooldown for new orders has passed, since this order is now finished - needs to happen in a did cancel call back as well...right?
+        if order_id == self._currently_processed_order_id:
+            self._new_order_cooldown = False
 
-        if self._hanging_orders_enabled:
-            for other_order_id in active_buy_ids:
-                self._hanging_order_ids.append(other_order_id)
-
-        self._filled_sells_balance += 1
-        self._last_own_trade_price = limit_order_record.price
-
-        self.log_with_clock(
-            logging.INFO,
-            f"({self.trading_pair}) Maker sell order {order_id} "
-            f"({limit_order_record.quantity} {limit_order_record.base_currency} @ "
-            f"{limit_order_record.price} {limit_order_record.quote_currency}) has been completely filled."
-        )
-        self.notify_hb_app_with_timestamp(
-            f"Maker SELL order {limit_order_record.quantity} {limit_order_record.base_currency} @ "
-            f"{limit_order_record.price} {limit_order_record.quote_currency} is filled."
-        )
-
-    # cdef bint c_is_within_tolerance(self, list current_prices, list proposal_prices):
-    #     if len(current_prices) != len(proposal_prices):
-    #         return False
-    #     current_prices = sorted(current_prices)
-    #     proposal_prices = sorted(proposal_prices)
-    #     for current, proposal in zip(current_prices, proposal_prices):
-    #         # if spread diff is more than the tolerance or order quantities are different, return false.
-    #         if abs(proposal - current)/current > self._order_refresh_tolerance_pct:
-    #             return False
-    #     return True
-
-    # S: We don't need this in the future
     cdef bint c_to_create_orders(self, object proposal):
         return self._create_timestamp < self._current_timestamp and \
             proposal is not None and \
@@ -1019,6 +984,9 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                         expiration_seconds=expiration_seconds,
                         position_action=position_action
                     )
+
+                    self._currently_processed_order_id = bid_order_id
+                    self._new_order_cooldown = True
                     
                     # S: TODO: Try out, if we even need this if block
                     if position_action == PositionAction.CLOSE:
@@ -1026,7 +994,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
 
                     orders_created = True
 
-            else: # S: Here we open a new LONG Position BUG: Why do we have the wron quote balance when opening long?
+            else: # S: Here we open a new LONG Position BUG: Why do we have the wrong quote balance when opening long?
                 if self._logging_options & self.OPTION_LOG_CREATE_ORDER:
                     price_quote_str = [f"{buy.size.normalize()} {self.base_asset}, "
                                     f"{buy.price.normalize()} {self.quote_asset}"
@@ -1048,6 +1016,9 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                         expiration_seconds=expiration_seconds,
                         position_action=position_action
                     )
+
+                    self._currently_processed_order_id = bid_order_id
+                    self._new_order_cooldown = True
 
                     # S: TODO: Try out, if we even need this if block
                     if position_action == PositionAction.CLOSE:
@@ -1081,6 +1052,9 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                         expiration_seconds=expiration_seconds,
                         position_action=position_action
                     )
+
+                    self._currently_processed_order_id = ask_order_id
+                    self._new_order_cooldown = True
                    
                     # S: TODO: Try out, if we even need this if block
                     if position_action == PositionAction.CLOSE:
@@ -1106,6 +1080,10 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                         expiration_seconds=expiration_seconds,
                         position_action=position_action
                     )
+
+                    self._currently_processed_order_id = ask_order_id
+                    self._new_order_cooldown = True
+
                     # S: TODO: Try out, if we even need this if block
                     if position_action == PositionAction.CLOSE:
                         self._exit_orders.append(ask_order_id)

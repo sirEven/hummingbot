@@ -7,6 +7,8 @@ from hummingbot.strategy.strategy_base cimport StrategyBase
 cdef class TechnicalAnalysisStrategy(StrategyBase):
     cdef:
         object _ta
+        object _currently_processed_order_id
+        object _new_order_cooldown
         object _market_info
         int _leverage
         object _position_mode
@@ -62,6 +64,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
         object _ts_peak_bid_price
         object _ts_peak_ask_price
         list _exit_orders
+    cdef c_perform_trades(self, session_positions, current_signal)
     cdef c_manage_positions(self, list session_positions)
     # cdef c_manage_long_position(self, list session_positions)
     # cdef c_manage_short_position(self, list session_positions)

@@ -84,8 +84,11 @@ def start(self):
 
         strategy_logging_options = TechnicalAnalysisStrategy.OPTION_LOG_ALL
 
+        # S: Beware of argument order... -.-
         self.strategy = TechnicalAnalysisStrategy(
             ta = TA(ta_pattern, time_resolution, period, candle_part, trade_volume),
+            currently_processed_order_id = "",
+            new_order_cooldown = False,
             market_info=MarketTradingPairTuple(*maker_data),
             # leverage=leverage,
             # position_mode=position_mode,
