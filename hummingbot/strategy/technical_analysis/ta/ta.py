@@ -103,8 +103,7 @@ class TA():
             self.move_current_candle()
             logger.info(f"Number of Candles: {len(self.candles)}")
 
-            if len(self.__candles) == self.__period:
-                self.__pattern_detection.run_pattern_detection(self.__candles, self.__logger)
+            self.__pattern_detection.run_pattern_detection(self.__candles, self.__period, self.__logger)
 
             self.reset_tick_count()
 
