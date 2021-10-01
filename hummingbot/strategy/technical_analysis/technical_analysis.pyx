@@ -579,17 +579,16 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                     self.logger().warning(f"WARNING: Some markets are not connected or are down at the moment. Market "
                                           f"making may be dangerous when markets or networks are unstable.")
 
-            # S: Capture the current tick count into a local variable to use during this tick as well as current mid price and signal
+            # S: Capture the current tick count into a local variable to use during this tick as well as current mid price
             current_mid_price = self._market_info.get_mid_price()
             current_tick_count = self._ta.tick_count
-            current_signal = self._ta.signal # S: TODO: This is actually wrong - this way we only ever work on the previous signal every tick
             self._ta.tick_alert(self.logger(), current_tick_count)
 
             # S: Here we run candle-infrastructure and pattern detection - updates the trade-signal TODO: REMOVE logger()
             self._ta.track_and_analyze_candles(self.logger(), current_mid_price, self._current_timestamp)
 
             # S: Here we run trading logic derived and adapted from pmm strategy:    
-            self.c_perform_trades(session_positions, current_signal)
+            self.c_perform_trades(session_positions, self._ta.signal)
 
         finally:
             self._last_timestamp = timestamp
