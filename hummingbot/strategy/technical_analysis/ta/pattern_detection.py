@@ -57,4 +57,4 @@ class PatternDetection():
 
             self.__previous_pattern_value = current_pattern_value
 
-# S: TODO: WIP -> hullMA crossover vs. hullMA Slope & Signal - how to differentiate several periods and signal combination
+# S: TODO: WIP -> hullMA crossover vs. hullMA Slope & Signal - how to differentiate several periods and signal combination (set_signal() as is but used twice)

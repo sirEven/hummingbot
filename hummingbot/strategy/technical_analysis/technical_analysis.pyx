@@ -574,17 +574,14 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
 
         for position in session_positions:
             
-            # self.logger().info(f"position amount is {position.amount}")
-            
-            # S: Condition to only close, if we currently have a sell signal or rather NO hold_long signal
-            if position.amount > 0: # S: It is a long position -> we need to close it with a sell-order
+            if position.amount > 0: # S: It is a long position -> we need to close it with a sell-order if signal switches to sell
                 if self._ta.signal == Signal.sell: 
                     size = market.c_quantize_order_amount(self.trading_pair, abs(position.amount))
                     self.logger().info(f"POSITION AMOUNT in manage_positions: {position.amount}")
                     price = market.get_price(self.trading_pair, False)
                     sells.append(PriceSize(price, size)) 
-            # S: Condition to only close, if we currently have a buy signal or rather NO hold_short signal
-            else: # S: It is a short position -> we need to close it with a buy-order 
+
+            else: # S: It is a short position -> we need to close it with a buy-order if signal switches to buy
                 if position.amount != 0: 
                     if self._ta.signal == Signal.buy: 
                         size = market.c_quantize_order_amount(self.trading_pair, abs(position.amount))
@@ -600,18 +597,17 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
     cdef object c_create_base_proposal_buy(self): # S: BUG: Why do we have the wrong quote balance when opening long and short?
         cdef:
             ExchangeBase market = self._market_info.market
-            # object quote_balance = market.c_get_available_balance(self.quote_asset) # S: TODO: WIP HERE DEBUGGING
             object quote_balance = self.c_get_adjusted_available_balance(self.active_orders)[1]
             list buys = []
             list sells = []
 
-        price = market.get_price(self.trading_pair, True) # S: Correct way to set bid price (works and results in filled order aka an open position)
+        price = market.get_price(self.trading_pair, True)
         
         # S: calculate amount based on user set percentage        
         user_set_volume = self._ta.trade_volume/100
         quote_amount = Decimal(quote_balance * user_set_volume)
         trade_amount = Decimal(quote_amount/price)
-        size = trade_amount # self._order_amount <- S: This is the old way of setting amount (fixed amount)
+        size = trade_amount
         size = market.c_quantize_order_amount(self.trading_pair, size)
         self.logger().info(f"trade_volume: {self._ta.trade_volume}")
         self.logger().info(f"quote_balance: {quote_balance}")
@@ -625,18 +621,17 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
     cdef object c_create_base_proposal_sell(self):
         cdef:
             ExchangeBase market = self._market_info.market
-            # object quote_balance = market.c_get_available_balance(self.quote_asset) # S: TODO: WIP HERE DEBUGGING
             object quote_balance = self.c_get_adjusted_available_balance(self.active_orders)[1]
             list buys = []
             list sells = []
 
-        price = market.get_price(self.trading_pair, False) # S: Correct way to set ask price (works and results in filled order aka an open position)
+        price = market.get_price(self.trading_pair, False)
        
         # S: calculate amount based on user set percentage
         user_set_volume = self._ta.trade_volume/100
         quote_amount = Decimal(quote_balance * user_set_volume)
         trade_amount = Decimal(quote_amount/price)
-        size = trade_amount # self._order_amount <- S: This is the old way of setting amount (fixed amount)
+        size = trade_amount
         size = market.c_quantize_order_amount(self.trading_pair, size)
         self.logger().info(f"trade_volume: {self._ta.trade_volume}")
         self.logger().info(f"quote_balance: {quote_balance}")
