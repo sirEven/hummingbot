@@ -45,14 +45,3 @@ def set_signal(previous_pattern_value:float, current_pattern_value:float, curren
                 new_signal = Signal.hold_short
 
         return new_signal
-
-def switch_to_hold_immediately_on_new_signal(current_signal:Signal) -> Signal:
-
-    new_signal: Signal = None
-
-    if current_signal == Signal.buy:
-        new_signal = Signal.hold_long
-    elif current_signal == Signal.sell:
-        new_signal = Signal.hold_short
-
-    return new_signal

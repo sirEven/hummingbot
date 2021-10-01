@@ -5,7 +5,7 @@ import pandas as pd
 from pandas import DataFrame
 from .candle import Candle, CandlePart
 from .mathematical_functions import hull_ma
-from .signal import Signal, set_signal, switch_to_hold_immediately_on_new_signal
+from .signal import Signal, set_signal
 
 # S: TODO: Find an architecture to 
     # a) extend the patterns by additional technical analysis algorithms
@@ -30,9 +30,6 @@ class PatternDetection():
     
     def set_current_signal(self, value):
         self.__current_signal = value
-
-    def switch_to_hold_immediately_on_new_position(self, current_signal: Signal):
-        self.__current_signal = switch_to_hold_immediately_on_new_signal(current_signal)
 
     def run_pattern_detection(self, candles: List[Candle], period: int, logger):
 
@@ -59,3 +56,5 @@ class PatternDetection():
                 logger.info(f"Current SIGNAL: {self.__current_signal.name}")
 
             self.__previous_pattern_value = current_pattern_value
+
+# S: TODO: WIP -> hullMA crossover vs. hullMA Slope & Signal - how to differentiate several periods and signal combination

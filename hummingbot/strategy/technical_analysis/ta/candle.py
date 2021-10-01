@@ -9,7 +9,6 @@ class CandlePart(Enum):
     close = 4
 
 class Candle():
-# TODO: Move resolution out of here into ta
     def __init__(self, current_price, current_timestamp):
         self.__timestamp_open = current_timestamp
         self.__open = current_price
