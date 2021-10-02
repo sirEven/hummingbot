@@ -832,11 +832,10 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
             str order_id = order_completed_event.order_id
             limit_order_record = self._sb_order_tracker.c_get_limit_order(self._market_info, order_id)
 
-        self.logger().info(f"CURRENTLY BEING PROCESSED ORDER IS: {self._currently_processed_order_id} - WE JUST DID COMPLETE BUY ORDER {order_id}")
-        
-        # S: Cooldown for new orders has passed, since this order is now finished - needs to happen in a did cancel call back as well...right?
+        # S: Cooldown for new orders has passed, since this order is now finished
         if order_id == self._currently_processed_order_id:
             self._new_order_cooldown = False
+            self.logger().info(f"COOLDOWN FOR NEW ORDERS NOW OFF after completed buy order")
         
         # S: Delay such that we only submit Proposals with correct amount (querrying quote_balance too early results in wrong values)
         self._create_timestamp = self._current_timestamp + self._filled_order_delay 
@@ -847,11 +846,10 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
             str order_id = order_completed_event.order_id
             LimitOrder limit_order_record = self._sb_order_tracker.c_get_limit_order(self._market_info, order_id)
 
-        self.logger().info(f"CURRENTLY BEING PROCESSED ORDER IS: {self._currently_processed_order_id} - WE JUST DID COMPLETE SELL ORDER {order_id}")
-
-         # S: Cooldown for new orders has passed, since this order is now finished - needs to happen in a did cancel call back as well...right?
+         # S: Cooldown for new orders has passed, since this order is now finished
         if order_id == self._currently_processed_order_id:
             self._new_order_cooldown = False
+            self.logger().info(f"COOLDOWN FOR NEW ORDERS NOW OFF after completed sell order")
 
         # S: Delay such that we only submit Proposals with correct amount (querrying quote_balance too early results in wrong values)
         self._create_timestamp = self._current_timestamp + self._filled_order_delay 
@@ -862,27 +860,39 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
             str order_id = order_failed_event.order_id
             LimitOrder limit_order_record = self._sb_order_tracker.c_get_limit_order(self._market_info, order_id)
         
-        # S: Cooldown for new orders has passed, since this order is now finished - needs to happen in a did cancel call back as well...right?
+        # S: Cooldown for new orders has passed, since this order is now finished
         if order_id == self._currently_processed_order_id:
             self._new_order_cooldown = False
+            self.logger().info(f"COOLDOWN FOR NEW ORDERS NOW OFF after failed order")
+        
+        self._create_timestamp = self._current_timestamp + self._filled_order_delay 
+        self._cancel_timestamp = min(self._cancel_timestamp, self._create_timestamp)
     
     cdef c_did_cancel_order(self, object cancelled_event):
         cdef:
             str order_id = cancelled_event.order_id
             LimitOrder limit_order_record = self._sb_order_tracker.c_get_limit_order(self._market_info, order_id)
         
-        # S: Cooldown for new orders has passed, since this order is now finished - needs to happen in a did cancel call back as well...right?
+        # S: Cooldown for new orders has passed, since this order is now finished
         if order_id == self._currently_processed_order_id:
             self._new_order_cooldown = False
+            self.logger().info(f"COOLDOWN FOR NEW ORDERS NOW OFF after cancelle order")
+        
+        self._create_timestamp = self._current_timestamp + self._filled_order_delay 
+        self._cancel_timestamp = min(self._cancel_timestamp, self._create_timestamp)
     
     cdef c_did_expire_order(self, object expired_event):
         cdef:
             str order_id = expired_event.order_id
             LimitOrder limit_order_record = self._sb_order_tracker.c_get_limit_order(self._market_info, order_id)
         
-        # S: Cooldown for new orders has passed, since this order is now finished - needs to happen in a did cancel call back as well...right?
+        # S: Cooldown for new orders has passed, since this order is now finished
         if order_id == self._currently_processed_order_id:
             self._new_order_cooldown = False
+            self.logger().info(f"COOLDOWN FOR NEW ORDERS NOW OFF after expired order")
+        
+        self._create_timestamp = self._current_timestamp + self._filled_order_delay 
+        self._cancel_timestamp = min(self._cancel_timestamp, self._create_timestamp)
 
     cdef bint c_to_create_orders(self, object proposal):
         return self._create_timestamp < self._current_timestamp and \
@@ -921,6 +931,8 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
 
                     self._currently_processed_order_id = bid_order_id
                     self._new_order_cooldown = True
+                    self.logger().info(f"COOLDOWN FOR NEW ORDERS NOW ON")
+
                     
                     # S: TODO: Try out, if we even need this if block
                     if position_action == PositionAction.CLOSE:
@@ -949,6 +961,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
 
                     self._currently_processed_order_id = bid_order_id
                     self._new_order_cooldown = True
+                    self.logger().info(f"COOLDOWN FOR NEW ORDERS NOW ON")
 
         if len(proposal.sells) > 0:
             if position_action == PositionAction.CLOSE:
@@ -977,6 +990,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
 
                     self._currently_processed_order_id = ask_order_id
                     self._new_order_cooldown = True
+                    self.logger().info(f"COOLDOWN FOR NEW ORDERS NOW ON")
 
             else: # S: Here we open a new SHORT Position
                 if self._logging_options & self.OPTION_LOG_CREATE_ORDER:
@@ -999,6 +1013,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
 
                     self._currently_processed_order_id = ask_order_id
                     self._new_order_cooldown = True
+                    self.logger().info(f"COOLDOWN FOR NEW ORDERS NOW ON")
 
     cdef set_timers(self):
         cdef double next_cycle = self._current_timestamp + self._order_refresh_time
