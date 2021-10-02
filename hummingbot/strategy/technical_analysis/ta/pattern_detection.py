@@ -31,12 +31,15 @@ class PatternDetection():
     def set_current_signal(self, value):
         self.__current_signal = value
 
+    def set_previous_pattern_value(self, value):
+        self.__previous_pattern_value = value
+
     def run_pattern_detection(self, candles: List[Candle], period: int, logger):
 
         if self.__pattern == Pattern.hullMA.name:
-            self.calculate_hullMA_signal(candles, period, self.__candle_part, logger)
+            self.calculate_hullMA_crossover_signal(candles, period, self.__candle_part, self.__previous_pattern_value, logger)
     
-    def calculate_hullMA_signal(self, candles: List[Candle], period: int, candle_part: CandlePart, logger):
+    def calculate_hullMA_crossover_signal(self, candles: List[Candle], period: int, candle_part: CandlePart, previous_pattern_value: float, logger):
 
         if len(candles) == period:
                 
@@ -49,12 +52,12 @@ class PatternDetection():
             current_pattern_value = hull_ma(price_df[candle_part], len(candles))
             logger.info(f"Current hullMA: {current_pattern_value}")
 
-            if self.__previous_pattern_value != None: 
-                self.__current_signal = set_signal(self.__previous_pattern_value, current_pattern_value, self.__current_signal)
+            if previous_pattern_value != None: 
+                self.__current_signal = set_signal(previous_pattern_value, current_pattern_value, self.__current_signal)
 
             if self.__current_signal != None:
                 logger.info(f"Current SIGNAL: {self.__current_signal.name}")
 
-            self.__previous_pattern_value = current_pattern_value
+            self.set_previous_pattern_value(current_pattern_value)
 
 # S: TODO: WIP -> hullMA crossover vs. hullMA Slope & Signal - how to differentiate several periods and signal combination (set_signal() as is but used twice)
