@@ -32,15 +32,15 @@ from hummingbot.strategy.market_trading_pair_tuple import MarketTradingPairTuple
 from hummingbot.strategy.strategy_base import StrategyBase
 from hummingbot.client.config.global_config_map import global_config_map
 
-from .data_types import (
+from hummingbot.strategy.perpetual_market_making.data_types import (
     Proposal,
     PriceSize
 )
-from .perpetual_market_making_order_tracker import PerpetualMarketMakingOrderTracker
+from hummingbot.strategy.perpetual_market_making.perpetual_market_making_order_tracker import PerpetualMarketMakingOrderTracker
 
-from .asset_price_delegate cimport AssetPriceDelegate
-from .asset_price_delegate import AssetPriceDelegate
-from .order_book_asset_price_delegate cimport OrderBookAssetPriceDelegate
+from hummingbot.strategy.asset_price_delegate cimport AssetPriceDelegate
+from hummingbot.strategy.asset_price_delegate import AssetPriceDelegate
+from hummingbot.strategy.order_book_asset_price_delegate cimport OrderBookAssetPriceDelegate
 
 from .ta.ta import TA
 from .ta.pattern_detection import PatternDetection, Signal
