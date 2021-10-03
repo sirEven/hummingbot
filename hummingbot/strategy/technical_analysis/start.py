@@ -11,7 +11,7 @@ from hummingbot.connector.exchange_base import ExchangeBase
 from decimal import Decimal
 
 from .ta.ta import TA
-from .ta.pattern_detection import PatternDetection
+# from .ta.pattern_detection import PatternDetection
 
 def start(self):
     try:
