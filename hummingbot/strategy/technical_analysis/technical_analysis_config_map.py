@@ -135,12 +135,7 @@ technical_analysis_config_map = {
                   prompt=maker_trading_pair_prompt,
                   validator=validate_derivative_trading_pair,
                   prompt_on_new=True),
-    "order_amount":
-        ConfigVar(key="order_amount",
-                  prompt=order_amount_prompt,
-                  type_str="decimal",
-                  validator=validate_order_amount,
-                  prompt_on_new=True),
+
     "ta_pattern":
         ConfigVar(key="ta_pattern",
                   prompt="Which TA-Pattern do you want your bot to base its decisions on? >>> ",

@@ -17,12 +17,6 @@ leverage: null
 # Size of your bid and ask order.
 order_amount: null
 
-# The price source (current_market/external_market/custom_api).
-price_source: null
-
-# The price type (mid_price/last_price/last_own_trade_price/best_bid/best_ask).
-price_type: null
-
 # S: Here we save ta strategy specific parameters
 
 # What TA-Pattern to look for
@@ -39,7 +33,6 @@ candle_part: null
 
 # How much of your available balance (in quote currency) should be traded (percentage value)
 trade_volume: null
-
 
 # Use user provided orders to directly override the orders placed by order_amount and order_level_parameter
 # This is an advanced feature and user is expected to directly edit this field in config file

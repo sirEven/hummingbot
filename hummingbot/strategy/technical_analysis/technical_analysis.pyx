@@ -72,8 +72,8 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                  currently_processed_order_id: str,
                  new_order_cooldown: bool,  
                  market_info: MarketTradingPairTuple,
-                order_amount: Decimal,
-                filled_order_delay: float = 1.0, # S: Attention, here we set fixed delay!
+                # order_amount: Decimal,
+                 filled_order_delay: float = 1.0, # S: Attention, here we set fixed delay!
                  leverage: int = 1,
                  add_transaction_costs_to_orders: bool = False,
                  asset_price_delegate: AssetPriceDelegate = None,
@@ -90,7 +90,6 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
         self._sb_order_tracker = PerpetualMarketMakingOrderTracker()
         self._market_info = market_info
         self._leverage = leverage
-        self._order_amount = order_amount
         self._filled_order_delay = filled_order_delay
         self._add_transaction_costs_to_orders = add_transaction_costs_to_orders
         self._asset_price_delegate = asset_price_delegate
@@ -124,14 +123,6 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
     @order_refresh_tolerance_pct.setter
     def order_refresh_tolerance_pct(self, value: Decimal):
         self._order_refresh_tolerance_pct = value
-
-    @property
-    def order_amount(self) -> Decimal:
-        return self._order_amount
-
-    @order_amount.setter
-    def order_amount(self, value: Decimal):
-        self._order_amount = value
 
     @property
     def order_levels(self) -> int:
