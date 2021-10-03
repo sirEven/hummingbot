@@ -14,9 +14,6 @@ market: null
 # What leverage to used
 leverage: null
 
-# Size of your bid and ask order.
-order_amount: null
-
 # S: Here we save ta strategy specific parameters
 
 # What TA-Pattern to look for
