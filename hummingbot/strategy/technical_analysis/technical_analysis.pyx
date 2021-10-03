@@ -1,4 +1,3 @@
-# S: TODO: Fix dependencies such that we import from pmm folder instead of copying the files (future proof)
 from decimal import Decimal
 import logging
 import pandas as pd
@@ -49,7 +48,6 @@ NaN = float("nan")
 s_decimal_zero = Decimal(0)
 s_decimal_neg_one = Decimal(-1)
 pmm_logger = None
-
 
 cdef class TechnicalAnalysisStrategy(StrategyBase):
     OPTION_LOG_CREATE_ORDER = 1 << 3
