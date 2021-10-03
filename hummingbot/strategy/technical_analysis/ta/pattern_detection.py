@@ -61,4 +61,3 @@ class PatternDetection():
             self.set_previous_pattern_value(current_pattern_value)
 
 # S: TODO: WIP -> hullMA crossover vs. hullMA Slope & Signal - how to differentiate several periods and signal combination (set_signal() as is but used twice)
-# S: TODO: Check out if changing time in force value back from 'FOK' to 'IOC' still is necessary (in dydx derivative wrapper)
