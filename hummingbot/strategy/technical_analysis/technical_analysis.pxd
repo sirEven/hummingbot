@@ -3,7 +3,6 @@
 from libc.stdint cimport int64_t
 from hummingbot.strategy.strategy_base cimport StrategyBase
 
-
 cdef class TechnicalAnalysisStrategy(StrategyBase):
     cdef:
         object _ta
@@ -15,7 +14,6 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
         object _bid_spread
         object _ask_spread
         object _minimum_spread
-        object _order_amount
         str _position_management
         object _long_profit_taking_spread
         object _short_profit_taking_spread
@@ -74,11 +72,6 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
     cdef c_apply_order_levels_modifiers(self, object proposal)
     cdef c_apply_price_band(self, object proposal)
     cdef c_apply_ping_pong(self, object proposal)
-    cdef c_apply_order_price_modifiers(self, object proposal)
     cdef c_apply_budget_constraint(self, object proposal)
-    cdef c_filter_out_takers(self, object proposal)
-    cdef c_apply_order_optimization(self, object proposal)
-    cdef c_apply_add_transaction_costs(self, object proposal)
     cdef bint c_to_create_orders(self, object proposal)
     cdef c_execute_order_proposal(self, object proposal, object position_action)
-    cdef set_timers(self)

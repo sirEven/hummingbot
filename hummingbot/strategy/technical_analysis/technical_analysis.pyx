@@ -72,7 +72,6 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                  currently_processed_order_id: str,
                  new_order_cooldown: bool,  
                  market_info: MarketTradingPairTuple,
-                # order_amount: Decimal,
                  filled_order_delay: float = 1.0, # S: Attention, here we set fixed delay!
                  leverage: int = 1,
                  add_transaction_costs_to_orders: bool = False,
@@ -433,8 +432,8 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
         cdef:
             list lines = []
             list warning_lines = []
-        # warning_lines.extend(self._ping_pong_warning_lines)
-        # warning_lines.extend(self.network_warning([self._market_info]))
+
+        warning_lines.extend(self.network_warning([self._market_info]))
 
         markets_df = self.market_status_data_frame([self._market_info])
         lines.extend(["", "  Markets:"] + ["    " + line for line in markets_df.to_string(index=False).split("\n")])
@@ -678,13 +677,6 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                 [f"  Ping-pong removed {self._filled_sells_balance} sell orders."]
             )
 
-    cdef c_apply_order_price_modifiers(self, object proposal):
-        if self._order_optimization_enabled:
-            self.c_apply_order_optimization(proposal)
-
-        if self._add_transaction_costs_to_orders:
-            self.c_apply_add_transaction_costs(proposal)
-
     cdef c_apply_budget_constraint(self, object proposal):
         cdef:
             ExchangeBase market = self._market_info.market
@@ -717,81 +709,6 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                 sell.size = s_decimal_zero
             quote_size_total += quote_size
         proposal.sells = [o for o in proposal.sells if o.size > 0]
-
-    cdef c_filter_out_takers(self, object proposal):
-        cdef:
-            ExchangeBase market = self._market_info.market
-            list new_buys = []
-            list new_sells = []
-        top_ask = market.c_get_price(self.trading_pair, True)
-        if not top_ask.is_nan():
-            proposal.buys = [buy for buy in proposal.buys if buy.price < top_ask]
-        top_bid = market.c_get_price(self.trading_pair, False)
-        if not top_bid.is_nan():
-            proposal.sells = [sell for sell in proposal.sells if sell.price > top_bid]
-
-    # Compare the market price with the top bid and top ask price
-    cdef c_apply_order_optimization(self, object proposal):
-        cdef:
-            ExchangeBase market = self._market_info.market
-            object own_buy_size = s_decimal_zero
-            object own_sell_size = s_decimal_zero
-
-        # If there are multiple orders, do not jump prices
-        if self._order_levels > 1:
-            return
-
-        for order in self.active_orders:
-            if order.is_buy:
-                own_buy_size = order.quantity
-            else:
-                own_sell_size = order.quantity
-
-        if len(proposal.buys) == 1:
-            # Get the top bid price in the market using order_optimization_depth and your buy order volume
-            top_bid_price = self._market_info.get_price_for_volume(
-                False, self._bid_order_optimization_depth + own_buy_size).result_price
-            price_quantum = market.c_get_order_price_quantum(
-                self.trading_pair,
-                top_bid_price
-            )
-            # Get the price above the top bid
-            price_above_bid = (ceil(top_bid_price / price_quantum) + 1) * price_quantum
-
-            # If the price_above_bid is lower than the price suggested by the pricing proposal,
-            # lower your price to this
-            lower_buy_price = min(proposal.buys[0].price, price_above_bid)
-            proposal.buys[0].price = market.c_quantize_order_price(self.trading_pair, lower_buy_price)
-
-        if len(proposal.sells) == 1:
-            # Get the top ask price in the market using order_optimization_depth and your sell order volume
-            top_ask_price = self._market_info.get_price_for_volume(
-                True, self._ask_order_optimization_depth + own_sell_size).result_price
-            price_quantum = market.c_get_order_price_quantum(
-                self.trading_pair,
-                top_ask_price
-            )
-            # Get the price below the top ask
-            price_below_ask = (floor(top_ask_price / price_quantum) - 1) * price_quantum
-
-            # If the price_below_ask is higher than the price suggested by the pricing proposal,
-            # increase your price to this
-            higher_sell_price = max(proposal.sells[0].price, price_below_ask)
-            proposal.sells[0].price = market.c_quantize_order_price(self.trading_pair, higher_sell_price)
-
-    cdef object c_apply_add_transaction_costs(self, object proposal):
-        cdef:
-            ExchangeBase market = self._market_info.market
-        for buy in proposal.buys:
-            fee = market.c_get_fee(self.base_asset, self.quote_asset,
-                                   OrderType.LIMIT, TradeType.BUY, buy.size, buy.price)
-            price = buy.price * (Decimal(1) - fee.percent)
-            buy.price = market.c_quantize_order_price(self.trading_pair, price)
-        for sell in proposal.sells:
-            fee = market.c_get_fee(self.base_asset, self.quote_asset,
-                                   OrderType.LIMIT, TradeType.SELL, sell.size, sell.price)
-            price = sell.price * (Decimal(1) + fee.percent)
-            sell.price = market.c_quantize_order_price(self.trading_pair, price)
 
     cdef c_did_fill_order(self, object order_filled_event):
         cdef:
@@ -867,7 +784,7 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
         # S: Cooldown for new orders has passed, since this order is now finished
         if order_id == self._currently_processed_order_id:
             self._new_order_cooldown = False
-            self.logger().info(f"COOLDOWN FOR NEW ORDERS NOW OFF after cancelle order")
+            self.logger().info(f"COOLDOWN FOR NEW ORDERS NOW OFF after cancelled order")
         
         self._create_timestamp = self._current_timestamp + self._filled_order_delay 
         self._cancel_timestamp = min(self._cancel_timestamp, self._create_timestamp)
@@ -924,7 +841,6 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                     self._new_order_cooldown = True
                     self.logger().info(f"COOLDOWN FOR NEW ORDERS NOW ON")
 
-                    
                     # S: TODO: Try out, if we even need this if block
                     if position_action == PositionAction.CLOSE:
                         self._exit_orders.append(bid_order_id)
@@ -1005,13 +921,6 @@ cdef class TechnicalAnalysisStrategy(StrategyBase):
                     self._currently_processed_order_id = ask_order_id
                     self._new_order_cooldown = True
                     self.logger().info(f"COOLDOWN FOR NEW ORDERS NOW ON")
-
-    cdef set_timers(self):
-        cdef double next_cycle = self._current_timestamp + self._order_refresh_time
-        if self._create_timestamp <= self._current_timestamp:
-            self._create_timestamp = next_cycle
-        if self._cancel_timestamp <= self._current_timestamp:
-            self._cancel_timestamp = min(self._create_timestamp, next_cycle)
 
     def notify_hb_app(self, msg: str):
         if self._hb_app_notification:
