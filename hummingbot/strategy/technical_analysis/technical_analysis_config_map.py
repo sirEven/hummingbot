@@ -420,7 +420,7 @@ technical_analysis_config_map = {
                   prompt_on_new=True),
     "trade_volume":
         ConfigVar(key="trade_volume",
-                  prompt="How much of your available base currency (e.g.: 20%) do you wish to be used per trade? >>> ",
+                  prompt="How much of your available base currency (e.g.: 20%) do you wish to be used per trade? (This affects leverage) >>> ",
                   type_str="decimal",
                   validator=lambda v: validate_decimal(v, 1, 100, inclusive=False),
                   default=Decimal("12"),
