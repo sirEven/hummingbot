@@ -15,7 +15,6 @@ from .ta.pattern_detection import PatternDetection
 
 def start(self):
     try:
-        # order_amount = c_map.get("order_amount").value
         exchange = c_map.get("derivative").value.lower()
         raw_trading_pair = c_map.get("market").value
 
@@ -44,7 +43,6 @@ def start(self):
             currently_processed_order_id = "",
             new_order_cooldown = False,
             market_info=MarketTradingPairTuple(*maker_data),
-            # order_amount=order_amount,
             logging_options=strategy_logging_options,
             asset_price_delegate=asset_price_delegate,
             hb_app_notification=True,
