@@ -20,7 +20,6 @@ from hummingbot.client.config.config_helpers import (
 )
 from typing import Optional
 
-
 def maker_trading_pair_prompt():
     derivative = technical_analysis_config_map.get("derivative").value
     example = EXAMPLE_PAIRS.get(derivative)
@@ -170,7 +169,7 @@ technical_analysis_config_map = {
         ConfigVar(key="trade_volume",
                   prompt="How much of your available base currency (e.g.: 20%) do you wish to be used per trade? (This affects leverage) >>> ",
                   type_str="decimal",
-                  validator=lambda v: validate_decimal(v, 1, 100, inclusive=False),
+                  validator=lambda v: validate_decimal(v, 1, 100, inclusive=True),
                   default=Decimal("12"),
                   prompt_on_new=True)
 }
