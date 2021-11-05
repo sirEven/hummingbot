@@ -15,7 +15,7 @@ from hummingbot.client.settings import (
 )
 
 from hummingbot.client.config.config_helpers import (
-    minimum_order_amount,
+    # minimum_order_amount, # S: See how we might still calculate minimum order amount in volume prompt
     parse_cvar_value
 )
 from typing import Optional
@@ -38,23 +38,23 @@ def validate_derivative_position_mode(value: str) -> Optional[str]:
         return "Position mode can either be One-way or Hedge mode"
 
 
-async def order_amount_prompt() -> str:
-    derivative = technical_analysis_config_map["derivative"].value
-    trading_pair = technical_analysis_config_map["market"].value
-    base_asset, quote_asset = trading_pair.split("-")
-    min_amount = await minimum_order_amount(derivative, trading_pair)
-    return f"What is the amount of {base_asset} per order? (minimum {min_amount}) >>> "
+# async def order_amount_prompt() -> str:
+#     derivative = technical_analysis_config_map["derivative"].value
+#     trading_pair = technical_analysis_config_map["market"].value
+#     base_asset, quote_asset = trading_pair.split("-")
+#     min_amount = await minimum_order_amount(derivative, trading_pair)
+#     return f"What is the amount of {base_asset} per order? (minimum {min_amount}) >>> "
 
 
-async def validate_order_amount(value: str) -> Optional[str]:
-    try:
-        derivative = technical_analysis_config_map["derivative"].value
-        trading_pair = technical_analysis_config_map["market"].value
-        min_amount = await minimum_order_amount(derivative, trading_pair)
-        if Decimal(value) < min_amount:
-            return f"Order amount must be at least {min_amount}."
-    except Exception:
-        return "Invalid order amount."
+# async def validate_order_amount(value: str) -> Optional[str]:
+#     try:
+#         derivative = technical_analysis_config_map["derivative"].value
+#         trading_pair = technical_analysis_config_map["market"].value
+#         # min_amount = await minimum_order_amount(derivative, trading_pair)
+#         # if Decimal(value) < min_amount:
+#         #     return f"Order amount must be at least {min_amount}."
+#     except Exception:
+#         return "Invalid order amount."
 
 
 def validate_price_source(value: str) -> Optional[str]:
