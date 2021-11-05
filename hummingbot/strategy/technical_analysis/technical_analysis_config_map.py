@@ -16,6 +16,7 @@ from hummingbot.client.settings import (
 
 from hummingbot.client.config.config_helpers import (
     # minimum_order_amount, # S: See how we might still calculate minimum order amount in volume prompt
+    # https://github.com/CoinAlpha/hummingbot/commit/bb53fa0c1841c6e770b49b03c7891d0a6f18c62c
     parse_cvar_value
 )
 from typing import Optional
