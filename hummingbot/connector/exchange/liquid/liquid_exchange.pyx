@@ -1,12 +1,9 @@
-import aiohttp
 import asyncio
 import copy
 import json
 import logging
 import math
 import sys
-
-from async_timeout import timeout
 from decimal import Decimal
 from typing import (
     Any,
@@ -16,6 +13,8 @@ from typing import (
     Optional,
 )
 
+import aiohttp
+from async_timeout import timeout
 from libc.stdint cimport int64_t
 
 from hummingbot.connector.exchange.liquid.constants import Constants
@@ -29,8 +28,10 @@ from hummingbot.connector.exchange_base import ExchangeBase
 from hummingbot.connector.trading_rule cimport TradingRule
 from hummingbot.core.clock cimport Clock
 from hummingbot.core.data_type.cancellation_result import CancellationResult
+from hummingbot.core.data_type.common import OrderType, TradeType
 from hummingbot.core.data_type.limit_order import LimitOrder
 from hummingbot.core.data_type.order_book cimport OrderBook
+from hummingbot.core.data_type.trade_fee import AddedToCostTradeFee, TokenAmount
 from hummingbot.core.data_type.transaction_tracker import TransactionTracker
 from hummingbot.core.event.events import (
     BuyOrderCompletedEvent,
@@ -40,12 +41,9 @@ from hummingbot.core.event.events import (
     MarketTransactionFailureEvent,
     OrderCancelledEvent,
     OrderFilledEvent,
-    OrderType,
     SellOrderCompletedEvent,
     SellOrderCreatedEvent,
-    TradeType,
 )
-from hummingbot.core.data_type.trade_fee import AddedToCostTradeFee, TokenAmount
 from hummingbot.core.network_iterator import NetworkStatus
 from hummingbot.core.utils.async_utils import (
     safe_ensure_future,
@@ -623,7 +621,7 @@ cdef class LiquidExchange(ExchangeBase):
                         execute_price,
                         execute_amount_diff,
                     ),
-                    exchange_trade_id=exchange_order_id,
+                    exchange_trade_id=str(int(self._time() * 1e6)),
                 )
                 self.logger().info(f"Filled {execute_amount_diff} out of {tracked_order.amount} of the "
                                    f"{order_type_description} order {client_order_id}.")
@@ -644,11 +642,8 @@ cdef class LiquidExchange(ExchangeBase):
                                                                     tracked_order.client_order_id,
                                                                     tracked_order.base_asset,
                                                                     tracked_order.quote_asset,
-                                                                    (tracked_order.fee_asset
-                                                                     or tracked_order.base_asset),
                                                                     tracked_order.executed_amount_base,
                                                                     tracked_order.executed_amount_quote,
-                                                                    tracked_order.fee_paid,
                                                                     order_type))
                     else:
                         self.logger().info(f"The market sell order {tracked_order.client_order_id} has completed "
@@ -658,11 +653,8 @@ cdef class LiquidExchange(ExchangeBase):
                                                                      tracked_order.client_order_id,
                                                                      tracked_order.base_asset,
                                                                      tracked_order.quote_asset,
-                                                                     (tracked_order.fee_asset
-                                                                      or tracked_order.quote_asset),
                                                                      tracked_order.executed_amount_base,
                                                                      tracked_order.executed_amount_quote,
-                                                                     tracked_order.fee_paid,
                                                                      order_type))
                 else:
                     self.logger().info(f"The market order {tracked_order.client_order_id} has failed/been cancelled "
@@ -750,6 +742,7 @@ cdef class LiquidExchange(ExchangeBase):
                 updated = tracked_order.update_with_trade_update(content)
 
                 if updated:
+                    trade_id = content.get("trade_id", None)
                     self.logger().info(f"Filled {execute_amount_diff} out of {tracked_order.amount} of the "
                                        f"{tracked_order.order_type_description} order {tracked_order.client_order_id} "
                                        f"according to Liquid user stream.")
@@ -765,7 +758,9 @@ cdef class LiquidExchange(ExchangeBase):
                                              AddedToCostTradeFee(
                                                  flat_fees=[TokenAmount(tracked_order.fee_asset, fee_diff)]
                                              ),
-                                             exchange_trade_id=tracked_order.exchange_order_id
+                                             exchange_trade_id=(str(trade_id)
+                                                                if trade_id
+                                                                else str(int(self._time() * 1e6)))
                                          ))
 
                 if event_status == "filled":
@@ -779,11 +774,8 @@ cdef class LiquidExchange(ExchangeBase):
                                                                     tracked_order.client_order_id,
                                                                     tracked_order.base_asset,
                                                                     tracked_order.quote_asset,
-                                                                    (tracked_order.fee_asset
-                                                                     or tracked_order.base_asset),
                                                                     tracked_order.executed_amount_base,
                                                                     tracked_order.executed_amount_quote,
-                                                                    tracked_order.fee_paid,
                                                                     tracked_order.order_type))
                     else:
                         self.logger().info(f"The market sell order {tracked_order.client_order_id} has completed "
@@ -793,11 +785,8 @@ cdef class LiquidExchange(ExchangeBase):
                                                                      tracked_order.client_order_id,
                                                                      tracked_order.base_asset,
                                                                      tracked_order.quote_asset,
-                                                                     (tracked_order.fee_asset
-                                                                      or tracked_order.quote_asset),
                                                                      tracked_order.executed_amount_base,
                                                                      tracked_order.executed_amount_quote,
-                                                                     tracked_order.fee_paid,
                                                                      tracked_order.order_type))
                     self.c_stop_tracking_order(tracked_order.client_order_id)
                 elif event_status == "cancelled":  # status == "cancelled":
@@ -912,7 +901,8 @@ cdef class LiquidExchange(ExchangeBase):
                                                       trading_pair,
                                                       decimal_amount,
                                                       decimal_price,
-                                                      order_id))
+                                                      order_id,
+                                                      tracked_order.creation_timestamp))
         except asyncio.CancelledError:
             raise
         except Exception as e:
@@ -976,7 +966,8 @@ cdef class LiquidExchange(ExchangeBase):
                                                        trading_pair,
                                                        decimal_amount,
                                                        decimal_price,
-                                                       order_id))
+                                                       order_id,
+                                                       tracked_order.creation_timestamp))
         except asyncio.CancelledError:
             raise
         except Exception as e:
@@ -1186,7 +1177,8 @@ cdef class LiquidExchange(ExchangeBase):
             order_type,
             trade_type,
             price,
-            amount
+            amount,
+            creation_timestamp=self.current_timestamp
         )
 
     cdef c_stop_tracking_order(self, str order_id):
