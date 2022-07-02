@@ -2,21 +2,14 @@ import asyncio
 import json
 import logging
 import time
-
-from async_timeout import timeout
 from decimal import Decimal
-from typing import (
-    Any,
-    AsyncIterable,
-    Dict,
-    List,
-    Optional,
-    Tuple,
-)
+from typing import Any, AsyncIterable, Dict, List, Optional, Tuple
 
 import aiohttp
+from async_timeout import timeout
 from libc.stdint cimport int64_t
 
+from hummingbot.connector.exchange.blocktane.blocktane_api_order_book_data_source import BlocktaneAPIOrderBookDataSource
 from hummingbot.connector.exchange.blocktane.blocktane_auth import BlocktaneAuth
 from hummingbot.connector.exchange.blocktane.blocktane_in_flight_order import BlocktaneInFlightOrder
 from hummingbot.connector.exchange.blocktane.blocktane_order_book_tracker import BlocktaneOrderBookTracker
@@ -83,7 +76,7 @@ cdef class BlocktaneExchange(ExchangeBase):
     MARKET_BUY_ORDER_COMPLETED_EVENT_TAG = MarketEvent.BuyOrderCompleted.value
     MARKET_SELL_ORDER_COMPLETED_EVENT_TAG = MarketEvent.SellOrderCompleted.value
     MARKET_WITHDRAW_ASSET_EVENT_TAG = MarketEvent.WithdrawAsset.value
-    MARKET_ORDER_CANCELLED_EVENT_TAG = MarketEvent.OrderCancelled.value
+    MARKET_ORDER_CANCELED_EVENT_TAG = MarketEvent.OrderCancelled.value
     MARKET_TRANSACTION_FAILURE_EVENT_TAG = MarketEvent.TransactionFailure.value
     MARKET_ORDER_FAILURE_EVENT_TAG = MarketEvent.OrderFailure.value
     MARKET_ORDER_FILLED_EVENT_TAG = MarketEvent.OrderFilled.value
@@ -119,7 +112,7 @@ cdef class BlocktaneExchange(ExchangeBase):
         self._in_flight_orders = {}
         self._last_poll_timestamp = 0
         self._last_timestamp = 0
-        self._order_book_tracker = BlocktaneOrderBookTracker(trading_pairs=trading_pairs)
+        self._set_order_book_tracker(BlocktaneOrderBookTracker(trading_pairs=trading_pairs))
         self._order_not_found_records = {}
         self._poll_notifier = asyncio.Event()
         self._poll_interval = poll_interval
@@ -152,7 +145,7 @@ cdef class BlocktaneExchange(ExchangeBase):
 
     @property
     def order_books(self) -> Dict[str, OrderBook]:
-        return self._order_book_tracker.order_books
+        return self.order_book_tracker.order_books
 
     @property
     def blocktane_auth(self) -> BlocktaneAuth:
@@ -161,7 +154,7 @@ cdef class BlocktaneExchange(ExchangeBase):
     @property
     def status_dict(self) -> Dict[str, bool]:
         return {
-            "order_book_initialized": self._order_book_tracker.ready,
+            "order_book_initialized": self.order_book_tracker.ready,
             "account_balance": len(self._account_balances) > 0 if self._trading_required else True,
             "trading_rule_initialized": len(self._trading_rules) > 0 if self._trading_required else True
         }
@@ -453,8 +446,8 @@ cdef class BlocktaneExchange(ExchangeBase):
                     if order_state == "cancel":
                         tracked_order.last_state = "cancel"
                         self.logger().info(f"The {tracked_order.order_type}-{tracked_order.trade_type} "
-                                           f"{client_order_id} has been cancelled according to Blocktane order status API.")
-                        self.c_trigger_event(self.MARKET_ORDER_CANCELLED_EVENT_TAG,
+                                           f"{client_order_id} has been canceled according to Blocktane order status API.")
+                        self.c_trigger_event(self.MARKET_ORDER_CANCELED_EVENT_TAG,
                                              OrderCancelledEvent(
                                                  self._current_timestamp,
                                                  client_order_id
@@ -587,10 +580,10 @@ cdef class BlocktaneExchange(ExchangeBase):
 
                     if order_status == "cancel":  # CANCEL
 
-                        self.logger().info(f"The order {tracked_order.client_order_id} has been cancelled "
+                        self.logger().info(f"The order {tracked_order.client_order_id} has been canceled "
                                            f"according to Blocktane WebSocket API.")
                         tracked_order.last_state = "cancel"
-                        self.c_trigger_event(self.MARKET_ORDER_CANCELLED_EVENT_TAG,
+                        self.c_trigger_event(self.MARKET_ORDER_CANCELED_EVENT_TAG,
                                              OrderCancelledEvent(self._current_timestamp,
                                                                  tracked_order.client_order_id))
                         self.c_stop_tracking_order(tracked_order.client_order_id)
@@ -649,7 +642,7 @@ cdef class BlocktaneExchange(ExchangeBase):
 
     cdef OrderBook c_get_order_book(self, str trading_pair):
         cdef:
-            dict order_books = self._order_book_tracker.order_books
+            dict order_books = self.order_book_tracker.order_books
 
         if trading_pair not in order_books:
             raise ValueError(f"No order book exists for '{trading_pair}'.")
@@ -931,9 +924,9 @@ cdef class BlocktaneExchange(ExchangeBase):
             if ("record.not_found" in str(err) and tracked_order is not None and
                     tracked_order.creation_timestamp < (time.time() - self.ORDER_NOT_EXIST_WAIT_TIME)):
                 # The order doesn't exist
-                self.logger().info(f"The order {order_id} does not exist on Blocktane. Marking as cancelled.")
+                self.logger().info(f"The order {order_id} does not exist on Blocktane. Marking as canceled.")
                 self.c_stop_tracking_order(order_id)
-                self.c_trigger_event(self.MARKET_ORDER_CANCELLED_EVENT_TAG,
+                self.c_trigger_event(self.MARKET_ORDER_CANCELED_EVENT_TAG,
                                      OrderCancelledEvent(self._current_timestamp, order_id))
                 return order_id
 
@@ -964,7 +957,7 @@ cdef class BlocktaneExchange(ExchangeBase):
                     successful_cancellation.append(CancellationResult(res, True))
         except Exception as e:
             self.logger().error(
-                f"Unexpected error cancelling orders. {e}"
+                f"Unexpected error canceling orders. {e}"
             )
 
         failed_cancellation = [CancellationResult(oid, False) for oid in order_id_set]
@@ -1020,7 +1013,7 @@ cdef class BlocktaneExchange(ExchangeBase):
         return NetworkStatus.CONNECTED
 
     def _stop_network(self):
-        self._order_book_tracker.stop()
+        self.order_book_tracker.stop()
         if self._status_polling_task is not None:
             self._status_polling_task.cancel()
         if self._user_stream_tracker_task is not None:
@@ -1035,7 +1028,7 @@ cdef class BlocktaneExchange(ExchangeBase):
 
     async def start_network(self):
         self._stop_network()
-        self._order_book_tracker.start()
+        self.order_book_tracker.start()
         self._trading_rules_polling_task = safe_ensure_future(self._trading_rules_polling_loop())
         if self._trading_required:
             self._status_polling_task = safe_ensure_future(self._status_polling_loop())
@@ -1068,3 +1061,11 @@ cdef class BlocktaneExchange(ExchangeBase):
                 price: Decimal = s_decimal_NaN,
                 is_maker: Optional[bool] = None) -> AddedToCostTradeFee:
         return self.c_get_fee(base_currency, quote_currency, order_type, order_side, amount, price, is_maker)
+
+    async def all_trading_pairs(self) -> List[str]:
+        # This method should be removed and instead we should implement _initialize_trading_pair_symbol_map
+        return await BlocktaneAPIOrderBookDataSource.fetch_trading_pairs()
+
+    async def get_last_traded_prices(self, trading_pairs: List[str]) -> Dict[str, float]:
+        # This method should be removed and instead we should implement _get_last_traded_price
+        return await BlocktaneAPIOrderBookDataSource.get_last_traded_prices(trading_pairs=trading_pairs)
